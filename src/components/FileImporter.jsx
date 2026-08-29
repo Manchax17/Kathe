@@ -1,98 +1,177 @@
+import { useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function FileImporter({ decks, setDecks, userId }) {
-  
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+const SAMPLE = `# Comentarios opcionales con #
+hello\thola
+world\tmundo
+"good morning"\t"buenos días"
+"complex answer with <br>tags"\t"primera línea<br>segunda línea"`;
 
-    // El nombre del mazo será el nombre del archivo sin la extensión .txt
-    const deckNameFromFile = file.name.replace('.txt', '').trim();
+export default function FileImporter({ decks, userId }) {
+  const [busy, setBusy] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [pasted, setPasted] = useState('');
+  const fileInputRef = useRef(null);
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target.result;
-      const lines = text.split('\n');
-      
-      const newWords = {};
-
-      lines.forEach(line => {
-        // Ignorar encabezados de Anki y líneas vacías
-        if (line.startsWith('#') || !line.trim()) return;
-
-        // Separar por tabulación (\t)
-        const columns = line.split('\t'); 
-        
-        // Formato nuevo: Col 0 es Pregunta, Col 1 es Respuesta
-        if (columns.length >= 2) {
-          const question = columns[0].trim();  
-          let answer = columns[1].trim();    
-
-          // Limpieza de comillas dobles de Anki
-          answer = answer.replace(/^"|"$/g, '').replaceAll('""', '"');
-
-          if (question && answer) {
-            newWords[question] = answer;
-          }
-        }
-      });
-
-      if (Object.keys(newWords).length === 0) {
-        alert("No se detectaron datos válidos en el archivo.");
-        return;
-      }
-
-      try {
-        const existingDeck = decks.find(d => d.name === deckNameFromFile);
-
-        if (existingDeck) {
-          const updatedWords = { ...existingDeck.words, ...newWords };
-          const { error } = await supabase
-            .from('decks')
-            .update({ words: updatedWords })
-            .eq('id', existingDeck.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase
-            .from('decks')
-            .insert([{ 
-              name: deckNameFromFile, 
-              words: newWords, 
-              user_id: userId 
-            }]);
-          if (error) throw error;
-        }
-
-        alert(`Mazo "${deckNameFromFile}" sincronizado con éxito.`);
-        window.location.reload(); 
-
-      } catch (err) {
-        console.error("Error:", err);
-        alert("Fallo al guardar en base de datos.");
-      }
-    };
-
-    reader.readAsText(file);
+  const importWords = async (deckName, newWords) => {
+    const existing = decks.find((d) => d.name === deckName);
+    if (existing) {
+      const updated = { ...existing.words, ...newWords };
+      const { error } = await supabase
+        .from('decks')
+        .update({ words: updated })
+        .eq('id', existing.id);
+      if (error) throw error;
+      return { merged: true, count: Object.keys(newWords).length };
+    }
+    const { error } = await supabase.from('decks').insert([
+      { name: deckName, words: newWords, user_id: userId },
+    ]);
+    if (error) throw error;
+    return { merged: false, count: Object.keys(newWords).length };
   };
 
+  const parseText = (text) => {
+    const lines = text.split('\n');
+    const words = {};
+    lines.forEach((line) => {
+      if (line.startsWith('#') || !line.trim()) return;
+      const cols = line.split('\t');
+      if (cols.length >= 2) {
+        const q = cols[0].trim();
+        let a = cols[1].trim().replace(/^"|"$/g, '').replaceAll('""', '"');
+        if (q && a) words[q] = a;
+      }
+    });
+    return words;
+  };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const deckName = file.name.replace(/\.txt$/i, '').trim() || 'Importado';
+      const text = await file.text();
+      const words = parseText(text);
+      if (Object.keys(words).length === 0) {
+        alert('No se detectaron datos válidos.');
+        return;
+      }
+      const result = await importWords(deckName, words);
+      alert(
+        result.merged
+          ? `Se agregaron ${result.count} palabras al mazo "${deckName}".`
+          : `Mazo "${deckName}" creado con ${result.count} palabras.`,
+      );
+      window.location.reload();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePasteImport = async () => {
+    const deckName = window.prompt('Nombre del mazo para el texto pegado:');
+    if (!deckName) return;
+    setBusy(true);
+    try {
+      const words = parseText(pasted);
+      if (Object.keys(words).length === 0) {
+        alert('No se detectaron datos válidos.');
+        return;
+      }
+      await importWords(deckName, words);
+      window.location.reload();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sampleWordCount = parseText(SAMPLE);
+
   return (
-    <div className="p-6 bg-white rounded-[2rem] border-2 border-dashed border-slate-200 flex flex-col items-center gap-4 shadow-sm">
-      <div className="text-center">
-        <h3 className="font-black text-slate-800 uppercase tracking-tighter">Importador Clave-Valor</h3>
-        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-          Mazo destino: { "{Nombre del Archivo}" }
-        </p>
+    <section className="bg-surface-elevated border border-rule rounded-3xl p-6 shadow-paper">
+      <header className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-display text-xl text-ink">Importar palabras</h3>
+          <p className="text-sm text-ink-muted">
+            Formato Anki: <span className="font-mono">pregunta ⇥ respuesta</span> por línea.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowHelp((v) => !v)}
+          className="text-xs uppercase tracking-[0.25em] font-bold text-ink-muted hover:text-accent transition-all px-3 py-1.5 rounded-lg border border-rule"
+        >
+          {showHelp ? 'Ocultar ayuda' : 'Ver formato'}
+        </button>
+      </header>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <label
+          className={`cursor-pointer bg-accent px-5 py-3 rounded-2xl font-bold text-sm shadow-paper transition-all ${
+            busy ? 'opacity-60 pointer-events-none' : 'hover:shadow-paper-hover'
+          }`}
+          style={{ color: 'var(--surface)' }}
+        >
+          Seleccionar .txt
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt"
+            className="hidden"
+            onChange={(e) => handleFile(e.target.files?.[0])}
+          />
+        </label>
+        <span className="text-xs text-ink-muted">
+          o pega abajo y presiona "Pegar e importar"
+        </span>
       </div>
-      
-      <label className="cursor-pointer bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all active:scale-95 text-sm">
-        Seleccionar .txt
-        <input 
-          type="file" 
-          accept=".txt" 
-          className="hidden" 
-          onChange={handleFileUpload} 
-        />
-      </label>
-    </div>
+
+      <textarea
+        value={pasted}
+        onChange={(e) => setPasted(e.target.value)}
+        placeholder={'hola\thello\nmundo\tworld'}
+        className="w-full mt-4 p-3 bg-app border border-rule rounded-2xl font-mono text-xs outline-none focus:border-accent"
+        style={{ color: 'var(--ink)' }}
+        rows={3}
+      />
+      <div className="flex justify-end mt-2">
+        <button
+          onClick={handlePasteImport}
+          disabled={!pasted.trim() || busy}
+          className="px-4 py-2 rounded-xl bg-app border border-rule text-ink-soft text-xs font-bold hover:bg-accent-surface hover:text-accent-ink disabled:opacity-40 transition-all"
+        >
+          Pegar e importar
+        </button>
+      </div>
+
+      {showHelp && (
+        <div className="mt-5 grid md:grid-cols-2 gap-4 anim-fade-in">
+          <div className="bg-app border border-rule rounded-2xl p-4">
+            <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-ink-muted mb-2">
+              Reglas
+            </p>
+            <ul className="text-sm text-ink-soft space-y-1.5 list-disc list-inside">
+              <li>Una pareja por línea.</li>
+              <li>Pregunta y respuesta separadas por tabulador.</li>
+              <li>La respuesta se puede envolver en comillas dobles.</li>
+              <li>Líneas que empiezan con <span className="font-mono">#</span> se ignoran.</li>
+              <li>HTML básico (etiqueta <code className="font-mono">br</code>) se respeta al mostrar.</li>
+            </ul>
+          </div>
+          <div className="bg-app border border-rule rounded-2xl p-4">
+            <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-ink-muted mb-2">
+              Ejemplo ({Object.keys(sampleWordCount).length} tarjetas)
+            </p>
+            <pre className="font-mono text-xs text-ink whitespace-pre overflow-x-auto leading-relaxed">
+              {SAMPLE}
+            </pre>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

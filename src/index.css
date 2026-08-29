@@ -1,1 +1,198 @@
 @import "tailwindcss";
+
+/* ───────── Kathe · sistema de diseño ─────────
+   Las fuentes (Fraunces + Inter) se cargan vía <link> en index.html. */
+
+@theme {
+  --font-serif: 'Fraunces', ui-serif, Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink-50: #fbf6ec;
+  --color-ink-100: #f3ead9;
+  --color-ink-200: #e6d6b8;
+  --color-ink-300: #c9b18a;
+  --color-ink-500: #8a7556;
+  --color-ink-700: #4a3d2c;
+  --color-ink-900: #1f1810;
+
+  --color-accent: #b8694a;
+  --color-accent-soft: #d99479;
+  --color-accent-ink: #6b2f1c;
+
+  --color-paper: #faf4e7;
+  --color-paper-edge: #ede1c8;
+  --color-rule: #d6c8a8;
+  --color-shadow: rgba(74, 61, 44, 0.18);
+}
+
+:root,
+:root[data-theme='light'] {
+  --bg: var(--color-paper);
+  --bg-grain: var(--color-paper-edge);
+  --surface: #fffdf7;
+  --surface-elevated: #ffffff;
+  --ink: var(--color-ink-900);
+  --ink-muted: var(--color-ink-500);
+  --ink-soft: var(--color-ink-700);
+  --rule: var(--color-rule);
+  --accent: var(--color-accent);
+  --accent-soft: var(--color-accent-soft);
+  --accent-ink: var(--color-accent-ink);
+  --accent-surface: #f4dccb;
+  --danger: #a8323a;
+  --danger-surface: #f6d8db;
+  --shadow-card: 0 1px 0 var(--color-paper-edge), 0 14px 30px -18px var(--color-shadow);
+  --shadow-card-hover: 0 1px 0 var(--color-paper-edge), 0 22px 40px -18px var(--color-shadow);
+}
+
+:root[data-theme='dark'] {
+  --bg: #1a140d;
+  --bg-grain: #221a12;
+  --surface: #221a12;
+  --surface-elevated: #2a2017;
+  --ink: #f3ead9;
+  --ink-muted: #b9a682;
+  --ink-soft: #d6c3a1;
+  --rule: #3a2e1f;
+  --accent: #d99479;
+  --accent-soft: #b8694a;
+  --accent-ink: #f3ead9;
+  --accent-surface: #3a231a;
+  --danger: #d97a82;
+  --danger-surface: #3a1f22;
+  --shadow-card: 0 1px 0 #2a2017, 0 14px 30px -10px rgba(0, 0, 0, 0.5);
+  --shadow-card-hover: 0 1px 0 #2a2017, 0 22px 40px -10px rgba(0, 0, 0, 0.6);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  color: var(--ink);
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* textura de papel — ruido sutil */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.4 0 0 0 0 0.32 0 0 0 0 0.2 0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+:root[data-theme='dark'] body::before {
+  opacity: 0.35;
+  mix-blend-mode: screen;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* ───────── Tipografía display ───────── */
+.font-display {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-feature-settings: 'ss01';
+}
+
+.font-display-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ───────── Tokens semánticos como utilidades ───────── */
+.bg-app { background-color: var(--bg); }
+.bg-surface { background-color: var(--surface); }
+.bg-surface-elevated { background-color: var(--surface-elevated); }
+.bg-accent { background-color: var(--accent); }
+.bg-accent-surface { background-color: var(--accent-surface); }
+.bg-danger-surface { background-color: var(--danger-surface); }
+.text-ink { color: var(--ink); }
+.text-ink-muted { color: var(--ink-muted); }
+.text-ink-soft { color: var(--ink-soft); }
+.text-accent { color: var(--accent); }
+.text-accent-ink { color: var(--accent-ink); }
+.text-danger { color: var(--danger); }
+.border-rule { border-color: var(--rule); }
+.shadow-paper { box-shadow: var(--shadow-card); }
+.shadow-paper-hover { box-shadow: var(--shadow-card-hover); }
+
+/* ───────── Línea de costura / regla tipo cuaderno ───────── */
+.rule-dashed {
+  background-image: linear-gradient(to right, var(--rule) 50%, transparent 0%);
+  background-size: 8px 1px;
+  background-repeat: repeat-x;
+  background-position: top;
+}
+
+.washi-tape {
+  position: relative;
+}
+
+.washi-tape::before {
+  content: '';
+  position: absolute;
+  inset: -6px -10px auto -10px;
+  height: 14px;
+  background: var(--accent-surface);
+  opacity: 0.65;
+  transform: rotate(-1.5deg);
+  border-left: 1px dashed var(--rule);
+  border-right: 1px dashed var(--rule);
+}
+
+/* ───────── Scrollbar cozy ───────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-muted);
+}
+
+/* ───────── Focus ring con tinta ───────── */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ───────── Animaciones suaves ───────── */
+@keyframes kathe-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.anim-fade-in {
+  animation: kathe-fade-in 0.4s ease-out both;
+}
+
+@keyframes kathe-pop {
+  0% { transform: scale(0.96); opacity: 0; }
+  60% { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.anim-pop {
+  animation: kathe-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}

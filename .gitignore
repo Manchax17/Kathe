@@ -5,6 +5,9 @@ dist/
 .env.local
 .env.development.local
 
+# Bitácora personal de desarrollo (no va al repo)
+CONTEXT.md
+
 .DS_Store
 thumbs.db
 

@@ -1,14 +1,17 @@
+import { useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import { buildQueue, dailySeed, STUDY_ORDER_SHORT } from '../utils/studyQueue';
 
-export default function FlashcardView({ 
-  currentDeck, setCurrentDeck, currentIndex, setCurrentIndex, 
-  isFlipped, setIsFlipped, isAddingWord, setIsAddingWord, 
-  newWordKey, setNewWordKey, newWordValue, setNewWordValue, 
-  handleAddWord, setDecks, decks, onStartStudy 
+export default function FlashcardView({
+  currentDeck, setCurrentDeck, currentIndex, setCurrentIndex,
+  isFlipped, setIsFlipped, setDecks, decks, onStartStudy,
 }) {
-  
-  const wordsArray = Object.entries(currentDeck.words || {});
+  const wordsArray = useMemo(
+    () => buildQueue(currentDeck.words || {}, currentDeck.study_order, { seed: dailySeed() }),
+    [currentDeck.words, currentDeck.study_order],
+  );
   const currentPair = wordsArray[currentIndex];
+  const orderKey = STUDY_ORDER_SHORT[currentDeck.study_order] ? currentDeck.study_order : 'insertion';
 
   const handleDeleteWord = async () => {
     if (!currentPair) return;
@@ -38,99 +41,148 @@ export default function FlashcardView({
           setCurrentIndex(0);
         }
         setCurrentDeck(newDeck);
-        setDecks(decks.map(d => d.id === currentDeck.id ? newDeck : d));
+        setDecks(decks.map((d) => (d.id === currentDeck.id ? newDeck : d)));
       }
-    } catch (err) {
-      alert("No se pudo borrar la palabra.");
+    } catch {
+      alert('No se pudo borrar la palabra.');
     }
   };
 
+  const formatContent = (text) =>
+    String(text || '')
+      .replaceAll('<br>', '\n')
+      .replaceAll('<br />', '\n')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('<div>', '\n')
+      .replaceAll('</div>', '');
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center p-4">
-      <header className="w-full max-w-5xl flex justify-between items-center py-6">
-        <button 
-          onClick={() => {setCurrentDeck(null); setIsFlipped(false);}} 
-          className="text-blue-600 font-bold flex items-center gap-1 hover:bg-blue-50 px-3 py-2 rounded-xl transition-all"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" />
-          </svg>
-          Mazos
-        </button>
-
-        <h1 className="text-xl font-black uppercase tracking-tighter">{currentDeck.name}</h1>
-
-        <div className="flex gap-2">
-          <button 
-            onClick={onStartStudy}
-            className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg hover:bg-green-700 transition-all flex items-center gap-2"
+    <div className="min-h-screen bg-app flex flex-col">
+      <header className="border-b border-rule bg-surface">
+        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between gap-3 flex-wrap">
+          <button
+            onClick={() => {
+              setCurrentDeck(null);
+              setIsFlipped(false);
+            }}
+            className="text-accent font-bold text-sm flex items-center gap-2 hover:bg-accent-surface px-3 py-2 rounded-xl transition-all"
           >
-            <span className="text-[10px]">▶</span> ESTUDIAR
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" />
+            </svg>
+            Mazos
           </button>
 
-          <button 
-            onClick={() => setIsAddingWord(true)} 
-            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg hover:scale-105 transition-all"
+          <h1 className="font-display text-xl text-ink flex items-center gap-2">
+            {currentDeck.name}
+            {orderKey !== 'insertion' && (
+              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-accent-ink bg-accent-surface px-2 py-1 rounded-lg">
+                {STUDY_ORDER_SHORT[orderKey]}
+              </span>
+            )}
+          </h1>
+
+          <button
+            onClick={onStartStudy}
+            className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
+            style={{ color: 'var(--surface)' }}
           >
-            + Palabra
+            <span className="text-[10px]">▶</span> Estudiar
           </button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 py-10">
         {wordsArray.length > 0 ? (
-          <div className="w-full">
+          <div className="w-full max-w-2xl">
             <div className="flex justify-end mb-4">
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleDeleteWord(); }} 
-                className="text-red-400 hover:text-red-600 transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+              <button
+                onClick={handleDeleteWord}
+                className="text-[10px] uppercase tracking-[0.25em] font-bold text-danger hover:opacity-80 transition-all flex items-center gap-2"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Borrar Palabra
+                Borrar palabra
               </button>
             </div>
 
-            <div className="h-[500px] w-full [perspective:1200px] cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
-              <div className={`relative h-full w-full rounded-[3rem] shadow-2xl transition-all duration-700 [transform-style:preserve-3d] ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}>
-                
-                <div className="absolute inset-0 h-full w-full rounded-[3rem] bg-white p-10 flex flex-col [backface-visibility:hidden] border border-slate-100 overflow-hidden">
-                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-4 opacity-40 text-center">Pregunta</span>
+            <div
+              className="h-[460px] w-full [perspective:1200px] cursor-pointer anim-fade-in"
+              onClick={() => setIsFlipped(!isFlipped)}
+            >
+              <div
+                className={`relative h-full w-full rounded-[2rem] shadow-paper transition-all duration-700 [transform-style:preserve-3d] ${
+                  isFlipped ? '[transform:rotateY(180deg)]' : ''
+                }`}
+              >
+                <div
+                  className="absolute inset-0 h-full w-full rounded-[2rem] bg-surface-elevated border border-rule p-10 flex flex-col [backface-visibility:hidden] overflow-hidden"
+                >
+                  <span className="text-[10px] font-black text-ink-muted uppercase tracking-[0.3em] mb-3 text-center">
+                    Pregunta
+                  </span>
                   <div className="flex-1 flex items-center justify-center">
-                    <h2 className="text-3xl font-bold text-slate-800 text-center">{currentPair[0]}</h2>
+                    <h2 className="font-display text-4xl text-ink text-center leading-tight">
+                      {currentPair[0]}
+                    </h2>
                   </div>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-ink-muted text-center">
+                    Tocá para revelar
+                  </p>
                 </div>
 
-                <div className="absolute inset-0 h-full w-full rounded-[3rem] bg-blue-600 p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)] text-white overflow-hidden">
-                  <span className="text-[10px] font-black text-blue-200 uppercase tracking-widest mb-4 opacity-40 text-center">Respuesta</span>
-                  
-                  <div 
+                <div
+                  className="absolute inset-0 h-full w-full rounded-[2rem] bg-accent p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)] overflow-hidden"
+                  style={{ color: 'var(--surface)' }}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] mb-3 opacity-60 text-center">
+                    Respuesta
+                  </span>
+                  <div
                     className="flex-1 overflow-y-auto pr-2 custom-scrollbar text-left"
-                    onClick={(e) => e.stopPropagation()} 
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="text-lg leading-relaxed whitespace-pre-wrap font-medium">
-                      {currentPair[1]
-                        .replaceAll('<br>', '\n')
-                        .replaceAll('<br />', '\n')
-                        .replaceAll('&nbsp;', ' ')
-                        .replaceAll('<div>', '\n')
-                        .replaceAll('</div>', '')}
+                    <div className="font-display text-2xl leading-relaxed whitespace-pre-wrap">
+                      {formatContent(currentPair[1])}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-10 flex items-center justify-between w-full px-6 font-bold text-slate-400">
-              <button disabled={currentIndex === 0} onClick={() => {setCurrentIndex(currentIndex - 1); setIsFlipped(false);}} className="hover:text-blue-600 disabled:opacity-0 transition-all">← ANTERIOR</button>
-              <span className="text-xs tracking-[0.4em] uppercase">{currentIndex + 1} / {wordsArray.length}</span>
-              <button disabled={currentIndex === wordsArray.length - 1} onClick={() => {setCurrentIndex(currentIndex + 1); setIsFlipped(false);}} className="hover:text-blue-600 disabled:opacity-0 transition-all">SIGUIENTE →</button>
+            <div className="mt-8 flex items-center justify-between px-2 font-bold text-ink-muted text-xs uppercase tracking-[0.25em]">
+              <button
+                disabled={currentIndex === 0}
+                onClick={() => {
+                  setCurrentIndex(currentIndex - 1);
+                  setIsFlipped(false);
+                }}
+                className="hover:text-accent disabled:opacity-0 transition-all"
+              >
+                ← Anterior
+              </button>
+              <span>
+                {currentIndex + 1} / {wordsArray.length}
+              </span>
+              <button
+                disabled={currentIndex === wordsArray.length - 1}
+                onClick={() => {
+                  setCurrentIndex(currentIndex + 1);
+                  setIsFlipped(false);
+                }}
+                className="hover:text-accent disabled:opacity-0 transition-all"
+              >
+                Siguiente →
+              </button>
             </div>
           </div>
         ) : (
-          <div className="text-center p-20 border-2 border-dashed border-slate-200 rounded-[3rem] bg-white/50 w-full text-slate-400">
-            <p>Mazo vacío</p>
+          <div className="text-center p-16 border-2 border-dashed border-rule rounded-[2rem] bg-surface max-w-md">
+            <p className="font-display text-2xl text-ink-soft mb-2">Mazo vacío</p>
+            <p className="text-sm text-ink-muted">
+              Agregá palabras desde el menú ⋯ o importá un .txt.
+            </p>
           </div>
         )}
       </main>
