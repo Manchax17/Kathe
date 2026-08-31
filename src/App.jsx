@@ -10,6 +10,7 @@ import SettingsModal from './components/SettingsModal';
 
 function App() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState({ text: '', type: '' });
@@ -27,23 +28,45 @@ function App() {
   const [newWordKey, setNewWordKey] = useState('');
   const [newWordValue, setNewWordValue] = useState('');
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-  }, []);
-
   const fetchDecks = async () => {
     const { data, error } = await supabase
       .from('decks')
       .select('*')
       .order('created_at', { ascending: false });
-    if (!error) setDecks(data || []);
+    if (error) {
+      setMessage({
+        text: 'No se pudieron cargar tus mazos: ' + error.message,
+        type: 'error',
+      });
+      return;
+    }
+    setDecks(data || []);
   };
 
   useEffect(() => {
-    if (user) fetchDecks();
-  }, [user]);
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user ?? null;
+      setUser(u);
+      if (u) fetchDecks();
+      if (active) setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) fetchDecks();
+      else setDecks([]);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleAuth = async (type) => {
     if (!email || !password) {
@@ -128,6 +151,14 @@ function App() {
     setDecks((prev) => prev.filter((d) => d.id !== deckId));
     if (currentDeck && currentDeck.id === deckId) setCurrentDeck(null);
   };
+
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen bg-app flex items-center justify-center text-ink-muted font-display text-lg">
+        Cargando…
+      </div>
+    );
+  }
 
   if (!user) {
     return (

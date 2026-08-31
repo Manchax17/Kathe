@@ -177,22 +177,42 @@ body::before {
   border-radius: 6px;
 }
 
-/* ───────── Animaciones suaves ───────── */
-@keyframes kathe-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+/* ───────── Transición de tema suave ───────── */
+body,
+.bg-app, .bg-surface, .bg-surface-elevated, .bg-accent, .bg-accent-surface, .bg-danger-surface,
+.text-ink, .text-ink-muted, .text-ink-soft, .text-accent, .text-accent-ink, .text-danger,
+.border-rule, .shadow-paper, .shadow-paper-hover {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-.anim-fade-in {
-  animation: kathe-fade-in 0.4s ease-out both;
+/* ───────── Selección con tinta ───────── */
+::selection {
+  background-color: var(--accent);
+  color: var(--surface);
 }
 
-@keyframes kathe-pop {
-  0% { transform: scale(0.96); opacity: 0; }
-  60% { transform: scale(1.02); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
-}
+/* ───────── Ajuste tipográfico ───────── */
+.font-display { text-wrap: balance; }
+p, li, .text-pretty { text-wrap: pretty; }
 
-.anim-pop {
-  animation: kathe-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+/* ───────── Animaciones (respetan prefers-reduced-motion) ───────── */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes kathe-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .anim-fade-in {
+    animation: kathe-fade-in 0.4s ease-out both;
+  }
+
+  @keyframes kathe-pop {
+    0% { transform: scale(0.96); opacity: 0; }
+    60% { transform: scale(1.02); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .anim-pop {
+    animation: kathe-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
 }

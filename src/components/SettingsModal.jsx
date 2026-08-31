@@ -16,9 +16,9 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
     alert('Estadísticas reiniciadas.');
   };
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteDecks = async () => {
     const confirmed = window.confirm(
-      '¿Eliminar tu cuenta y todos tus mazos? Esta acción no se puede deshacer.',
+      '¿Eliminar todos tus mazos? Esta acción no se puede deshacer.',
     );
     if (!confirmed) return;
     try {
@@ -85,7 +85,7 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
               {user?.email}
             </p>
             <button
-              onClick={handleDeleteAccount}
+              onClick={handleDeleteDecks}
               className="mt-3 w-full text-left text-sm font-bold text-danger bg-danger-surface hover:opacity-80 transition-all px-4 py-3 rounded-2xl border border-rule"
             >
               Eliminar todos mis mazos

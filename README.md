@@ -9,6 +9,8 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
 ## Características
 
 - **Mazos y palabras** guardados en Supabase (Postgres + Auth).
+- **Agregar palabras a mano** desde el botón "Agregar" en cada mazo (pregunta + respuesta),
+  además de importar o generar con IA.
 - **Importar** desde archivos `.txt` estilo Anki (pregunta ⇥ respuesta por línea) o pegar directo.
 - **Modo estudio** con cola inteligente: si fallás, la palabra vuelve más tarde; si acertás, sale.
   Atajos: `Espacio` para revelar, `1` incorrecto, `2` correcto.
@@ -80,3 +82,20 @@ supabase/
 ```
 
 Diseñado por **Manchax**.
+
+## Registro de cambios
+
+Los ajustes y el estado inicial del proyecto se documentan en
+[`changes.md`](./changes.md). Se actualiza con cada modificación.
+
+### Estado actual (2026-08-30)
+
+Corregida la primera pasada de auditoría: lint limpio, reactividad de sesión con
+`onAuthStateChange`, pantalla de carga, manejo de errores en la carga de mazos,
+orden alfabético en español, validación de variables de entorno, `lang="es"` y
+eliminación de `react-router-dom` (dependencia sin usar).
+
+Pulido de UI: el modal "Nueva palabra" (que estaba vacío y rompía el alta manual de
+tarjetas) está implementado y conectado a `FlashcardView`; se añadió transición suave
+de tema, `::selection` con tinta, `text-wrap` y respeto a `prefers-reduced-motion`.
+Detalle en [`changes.md`](./changes.md).

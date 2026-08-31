@@ -44,7 +44,7 @@ export default function PdfImporter({ decks, setDecks }) {
     try {
       // 1. Extraer texto en el cliente
       setStatus(STATUS.reading);
-      const { text, truncated } = await extractPdfText(file, {
+      const { text, truncated, originalLength } = await extractPdfText(file, {
         onProgress: ({ page, total }) => setProgress({ page, total }),
       });
 
@@ -57,7 +57,7 @@ export default function PdfImporter({ decks, setDecks }) {
 
       if (truncated) {
         console.warn(
-          `PDF truncado: ${truncated.originalLength} → se usaron los primeros caracteres.`,
+          `PDF truncado: ${originalLength} caracteres → se usaron los primeros ${text.length}.`,
         );
       }
     } catch (err) {

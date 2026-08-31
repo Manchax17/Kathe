@@ -48,9 +48,9 @@ export function buildQueue(words, order = 'insertion', { seed } = {}) {
   const entries = Object.entries(words || {});
   switch (order) {
     case 'alphabetical':
-      return entries.sort((a, b) => a[0].localeCompare(b[0]));
+      return entries.sort((a, b) => a[0].localeCompare(b[0], 'es', { sensitivity: 'base', numeric: true }));
     case 'reverse':
-      return entries.sort((a, b) => b[0].localeCompare(a[0]));
+      return entries.sort((a, b) => b[0].localeCompare(a[0], 'es', { sensitivity: 'base', numeric: true }));
     case 'random':
       return shuffle(entries, Math.random);
     case 'random_seed':

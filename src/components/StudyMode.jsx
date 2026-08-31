@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { buildQueue, dailySeed } from '../utils/studyQueue';
 import { recordSession } from '../utils/stats';
 
@@ -16,6 +16,7 @@ export default function StudyMode({ currentDeck, onExit }) {
   const [failCounts, setFailCounts] = useState({});
   const [firstTryCorrect, setFirstTryCorrect] = useState(0);
   const [wordsSeen, setWordsSeen] = useState(new Set());
+  const recordedRef = useRef(false);
   const currentPair = sessionQueue[currentIndex];
 
   const handleAnswer = useCallback(
@@ -55,7 +56,8 @@ export default function StudyMode({ currentDeck, onExit }) {
   );
 
   useEffect(() => {
-    if (finished) {
+    if (finished && !recordedRef.current) {
+      recordedRef.current = true;
       recordSession({
         cardsAnswered: totalInitial,
         firstTryCorrect,
@@ -85,7 +87,7 @@ export default function StudyMode({ currentDeck, onExit }) {
       .replaceAll('</div>', '');
 
   if (finished) {
-    const pct = ((firstTryCorrect / totalInitial) * 100).toFixed(0);
+    const pct = totalInitial > 0 ? ((firstTryCorrect / totalInitial) * 100).toFixed(0) : '0';
     const mostFailed = Object.entries(failCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);

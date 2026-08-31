@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { buildQueue, dailySeed, STUDY_ORDER_SHORT } from '../utils/studyQueue';
+import NewWordModal from './NewWordModal';
 
 export default function FlashcardView({
   currentDeck, setCurrentDeck, currentIndex, setCurrentIndex,
   isFlipped, setIsFlipped, setDecks, decks, onStartStudy,
+  isAddingWord, setIsAddingWord, newWordKey, setNewWordKey, newWordValue,
+  setNewWordValue, handleAddWord,
 }) {
   const wordsArray = useMemo(
     () => buildQueue(currentDeck.words || {}, currentDeck.study_order, { seed: dailySeed() }),
@@ -82,13 +85,26 @@ export default function FlashcardView({
             )}
           </h1>
 
-          <button
-            onClick={onStartStudy}
-            className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
-            style={{ color: 'var(--surface)' }}
-          >
-            <span className="text-[10px]">▶</span> Estudiar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAddingWord(true)}
+              className="bg-surface-elevated border border-rule px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-app transition-all flex items-center gap-2"
+              title="Agregar palabra"
+              aria-label="Agregar palabra"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Agregar
+            </button>
+            <button
+              onClick={onStartStudy}
+              className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
+              style={{ color: 'var(--surface)' }}
+            >
+              <span className="text-[10px]">▶</span> Estudiar
+            </button>
+          </div>
         </div>
       </header>
 
@@ -186,6 +202,16 @@ export default function FlashcardView({
           </div>
         )}
       </main>
+
+      <NewWordModal
+        open={isAddingWord}
+        onClose={() => setIsAddingWord(false)}
+        newWordKey={newWordKey}
+        setNewWordKey={setNewWordKey}
+        newWordValue={newWordValue}
+        setNewWordValue={setNewWordValue}
+        handleAddWord={handleAddWord}
+      />
     </div>
   );
 }
