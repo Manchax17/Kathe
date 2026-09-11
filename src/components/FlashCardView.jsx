@@ -1,20 +1,50 @@
-import { useMemo } from 'react';
-import { supabase } from '../supabaseClient';
+import { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { buildQueue, dailySeed, STUDY_ORDER_SHORT } from '../utils/studyQueue';
+import { useAuth } from '../hooks/useAuth';
+import { useDecks } from '../hooks/useDecks';
 import NewWordModal from './NewWordModal';
 
-export default function FlashcardView({
-  currentDeck, setCurrentDeck, currentIndex, setCurrentIndex,
-  isFlipped, setIsFlipped, setDecks, decks, onStartStudy,
-  isAddingWord, setIsAddingWord, newWordKey, setNewWordKey, newWordValue,
-  setNewWordValue, handleAddWord,
-}) {
+/**
+ * Vista de un mazo: recorre las palabras como fichas que se dan vuelta.
+ *
+ * Antes recibía 16 props desde App.jsx (hasta los setters del mazo y de la lista).
+ * Ahora solo recibe el mazo —que la página resuelve desde la ruta— y escribe vía
+ * `useDecks()`, así que la grilla de la pantalla de inicio se actualiza sola al
+ * agregar o borrar una palabra.
+ *
+ * El índice se recorta al derivarlo en vez de sincronizarlo con un efecto: si
+ * borran la última palabra, `safeIndex` cae al nuevo final sin renderizar una
+ * ficha inexistente ni disparar renders en cascada.
+ */
+export default function FlashCardView({ deck }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { addWord, deleteWord } = useDecks();
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [isAddingWord, setIsAddingWord] = useState(false);
+  const [newWordKey, setNewWordKey] = useState('');
+  const [newWordValue, setNewWordValue] = useState('');
+
+  // Un mazo público de otra persona se puede ver y estudiar, pero no editar:
+  // RLS rechazaría el UPDATE, así que directamente no ofrecemos la acción.
+  const readOnly = deck.user_id !== user?.id;
+
   const wordsArray = useMemo(
-    () => buildQueue(currentDeck.words || {}, currentDeck.study_order, { seed: dailySeed() }),
-    [currentDeck.words, currentDeck.study_order],
+    () => buildQueue(deck.words || {}, deck.study_order, { seed: dailySeed() }),
+    [deck.words, deck.study_order],
   );
-  const currentPair = wordsArray[currentIndex];
-  const orderKey = STUDY_ORDER_SHORT[currentDeck.study_order] ? currentDeck.study_order : 'insertion';
+
+  const safeIndex = Math.min(currentIndex, Math.max(wordsArray.length - 1, 0));
+  const currentPair = wordsArray[safeIndex];
+  const orderKey = STUDY_ORDER_SHORT[deck.study_order] ? deck.study_order : 'insertion';
+
+  const goTo = (index) => {
+    setIsFlipped(false);
+    setCurrentIndex(index);
+  };
 
   const handleDeleteWord = async () => {
     if (!currentPair) return;
@@ -22,33 +52,28 @@ export default function FlashcardView({
     const confirmed = window.confirm(`¿Eliminar la palabra "${wordKey}"?`);
     if (!confirmed) return;
 
-    try {
-      const updatedWords = { ...currentDeck.words };
-      delete updatedWords[wordKey];
-
-      const { data, error } = await supabase
-        .from('decks')
-        .update({ words: updatedWords })
-        .eq('id', currentDeck.id)
-        .select();
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const newDeck = data[0];
-        const newArray = Object.entries(newDeck.words || {});
-        setIsFlipped(false);
-        if (newArray.length > 0 && currentIndex >= newArray.length) {
-          setCurrentIndex(newArray.length - 1);
-        } else if (newArray.length === 0) {
-          setCurrentIndex(0);
-        }
-        setCurrentDeck(newDeck);
-        setDecks(decks.map((d) => (d.id === currentDeck.id ? newDeck : d)));
-      }
-    } catch {
-      alert('No se pudo borrar la palabra.');
+    const { error } = await deleteWord(deck.id, wordKey);
+    if (error) {
+      alert('No se pudo borrar la palabra: ' + error.message);
+      return;
     }
+    setIsFlipped(false);
+  };
+
+  const handleAddWord = async (e) => {
+    e.preventDefault();
+    const key = newWordKey.trim();
+    const value = newWordValue.trim();
+    if (!key || !value) return;
+
+    const { error } = await addWord(deck.id, key, value);
+    if (error) {
+      alert('No se pudo agregar la palabra: ' + error.message);
+      return;
+    }
+    setNewWordKey('');
+    setNewWordValue('');
+    setIsAddingWord(false);
   };
 
   const formatContent = (text) =>
@@ -60,32 +85,34 @@ export default function FlashcardView({
       .replaceAll('</div>', '');
 
   return (
-    <div className="min-h-screen bg-app flex flex-col">
-      <header className="border-b border-rule bg-surface">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between gap-3 flex-wrap">
-          <button
-            onClick={() => {
-              setCurrentDeck(null);
-              setIsFlipped(false);
-            }}
-            className="text-accent font-bold text-sm flex items-center gap-2 hover:bg-accent-surface px-3 py-2 rounded-xl transition-all"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" />
-            </svg>
-            Mazos
-          </button>
+    <main className="flex-1 flex flex-col items-center justify-center px-6 py-10 w-full">
+      <div className="w-full max-w-3xl mb-8 flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to="/"
+          className="text-accent font-bold text-sm flex items-center gap-2 hover:bg-accent-surface px-3 py-2 rounded-xl transition-all"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" />
+          </svg>
+          Mazos
+        </Link>
 
-          <h1 className="font-display text-xl text-ink flex items-center gap-2">
-            {currentDeck.name}
-            {orderKey !== 'insertion' && (
-              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-accent-ink bg-accent-surface px-2 py-1 rounded-lg">
-                {STUDY_ORDER_SHORT[orderKey]}
-              </span>
-            )}
-          </h1>
+        <h1 className="font-display text-xl text-ink flex items-center gap-2 text-center">
+          {deck.name}
+          {orderKey !== 'insertion' && (
+            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-accent-ink bg-accent-surface px-2 py-1 rounded-lg">
+              {STUDY_ORDER_SHORT[orderKey]}
+            </span>
+          )}
+          {readOnly && (
+            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-ink-muted bg-app px-2 py-1 rounded-lg">
+              Solo lectura
+            </span>
+          )}
+        </h1>
 
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          {!readOnly && (
             <button
               onClick={() => setIsAddingWord(true)}
               className="bg-surface-elevated border border-rule px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-app transition-all flex items-center gap-2"
@@ -97,20 +124,20 @@ export default function FlashcardView({
               </svg>
               Agregar
             </button>
-            <button
-              onClick={onStartStudy}
-              className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
-              style={{ color: 'var(--surface)' }}
-            >
-              <span className="text-[10px]">▶</span> Estudiar
-            </button>
-          </div>
+          )}
+          <button
+            onClick={() => navigate(`/deck/${deck.id}/study`)}
+            className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
+            style={{ color: 'var(--surface)' }}
+          >
+            <span className="text-[10px]">▶</span> Estudiar
+          </button>
         </div>
-      </header>
+      </div>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 py-10">
-        {wordsArray.length > 0 ? (
-          <div className="w-full max-w-2xl">
+      {wordsArray.length > 0 ? (
+        <div className="w-full max-w-2xl">
+          {!readOnly && (
             <div className="flex justify-end mb-4">
               <button
                 onClick={handleDeleteWord}
@@ -122,86 +149,80 @@ export default function FlashcardView({
                 Borrar palabra
               </button>
             </div>
+          )}
 
+          <div
+            className="h-[460px] w-full [perspective:1200px] cursor-pointer anim-fade-in"
+            onClick={() => setIsFlipped(!isFlipped)}
+          >
             <div
-              className="h-[460px] w-full [perspective:1200px] cursor-pointer anim-fade-in"
-              onClick={() => setIsFlipped(!isFlipped)}
+              className={`relative h-full w-full rounded-[2rem] shadow-paper transition-all duration-700 [transform-style:preserve-3d] ${
+                isFlipped ? '[transform:rotateY(180deg)]' : ''
+              }`}
             >
-              <div
-                className={`relative h-full w-full rounded-[2rem] shadow-paper transition-all duration-700 [transform-style:preserve-3d] ${
-                  isFlipped ? '[transform:rotateY(180deg)]' : ''
-                }`}
-              >
-                <div
-                  className="absolute inset-0 h-full w-full rounded-[2rem] bg-surface-elevated border border-rule p-10 flex flex-col [backface-visibility:hidden] overflow-hidden"
-                >
-                  <span className="text-[10px] font-black text-ink-muted uppercase tracking-[0.3em] mb-3 text-center">
-                    Pregunta
-                  </span>
-                  <div className="flex-1 flex items-center justify-center">
-                    <h2 className="font-display text-4xl text-ink text-center leading-tight">
-                      {currentPair[0]}
-                    </h2>
-                  </div>
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-ink-muted text-center">
-                    Tocá para revelar
-                  </p>
+              <div className="absolute inset-0 h-full w-full rounded-[2rem] bg-surface-elevated border border-rule p-10 flex flex-col [backface-visibility:hidden] overflow-hidden">
+                <span className="text-[10px] font-black text-ink-muted uppercase tracking-[0.3em] mb-3 text-center">
+                  Pregunta
+                </span>
+                <div className="flex-1 flex items-center justify-center">
+                  <h2 className="font-display text-4xl text-ink text-center leading-tight">
+                    {currentPair[0]}
+                  </h2>
                 </div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-ink-muted text-center">
+                  Tocá para revelar
+                </p>
+              </div>
 
+              <div
+                className="absolute inset-0 h-full w-full rounded-[2rem] bg-accent p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)] overflow-hidden"
+                style={{ color: 'var(--surface)' }}
+              >
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] mb-3 opacity-60 text-center">
+                  Respuesta
+                </span>
                 <div
-                  className="absolute inset-0 h-full w-full rounded-[2rem] bg-accent p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)] overflow-hidden"
-                  style={{ color: 'var(--surface)' }}
+                  className="flex-1 overflow-y-auto pr-2 custom-scrollbar text-left"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] mb-3 opacity-60 text-center">
-                    Respuesta
-                  </span>
-                  <div
-                    className="flex-1 overflow-y-auto pr-2 custom-scrollbar text-left"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="font-display text-2xl leading-relaxed whitespace-pre-wrap">
-                      {formatContent(currentPair[1])}
-                    </div>
+                  <div className="font-display text-2xl leading-relaxed whitespace-pre-wrap">
+                    {formatContent(currentPair[1])}
                   </div>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div className="mt-8 flex items-center justify-between px-2 font-bold text-ink-muted text-xs uppercase tracking-[0.25em]">
-              <button
-                disabled={currentIndex === 0}
-                onClick={() => {
-                  setCurrentIndex(currentIndex - 1);
-                  setIsFlipped(false);
-                }}
-                className="hover:text-accent disabled:opacity-0 transition-all"
-              >
-                ← Anterior
-              </button>
-              <span>
-                {currentIndex + 1} / {wordsArray.length}
-              </span>
-              <button
-                disabled={currentIndex === wordsArray.length - 1}
-                onClick={() => {
-                  setCurrentIndex(currentIndex + 1);
-                  setIsFlipped(false);
-                }}
-                className="hover:text-accent disabled:opacity-0 transition-all"
-              >
-                Siguiente →
-              </button>
-            </div>
+          <div className="mt-8 flex items-center justify-between px-2 font-bold text-ink-muted text-xs uppercase tracking-[0.25em]">
+            <button
+              disabled={safeIndex === 0}
+              onClick={() => goTo(safeIndex - 1)}
+              className="hover:text-accent disabled:opacity-0 transition-all"
+            >
+              ← Anterior
+            </button>
+            <span>
+              {safeIndex + 1} / {wordsArray.length}
+            </span>
+            <button
+              disabled={safeIndex === wordsArray.length - 1}
+              onClick={() => goTo(safeIndex + 1)}
+              className="hover:text-accent disabled:opacity-0 transition-all"
+            >
+              Siguiente →
+            </button>
           </div>
-        ) : (
-          <div className="text-center p-16 border-2 border-dashed border-rule rounded-[2rem] bg-surface max-w-md">
-            <p className="font-display text-2xl text-ink-soft mb-2">Mazo vacío</p>
-            <p className="text-sm text-ink-muted">
-              Agregá palabras desde el menú ⋯ o importá un .txt.
-            </p>
-          </div>
-        )}
-      </main>
+        </div>
+      ) : (
+        <div className="text-center p-16 border-2 border-dashed border-rule rounded-[2rem] bg-surface max-w-md">
+          <p className="font-display text-2xl text-ink-soft mb-2">Mazo vacío</p>
+          <p className="text-sm text-ink-muted">
+            {readOnly
+              ? 'Este mazo todavía no tiene palabras.'
+              : 'Agregá palabras con el botón Agregar o importá un .txt.'}
+          </p>
+        </div>
+      )}
 
       <NewWordModal
         open={isAddingWord}
@@ -212,6 +233,6 @@ export default function FlashcardView({
         setNewWordValue={setNewWordValue}
         handleAddWord={handleAddWord}
       />
-    </div>
+    </main>
   );
 }

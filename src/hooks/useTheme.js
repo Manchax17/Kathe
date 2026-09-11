@@ -1,33 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useContext } from 'react';
+import { ThemeContext } from '../context/themeContext';
 
-const KEY = 'kathe:theme';
-
-function readInitial() {
-  if (typeof window === 'undefined') return 'light';
-  try {
-    const stored = window.localStorage.getItem(KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
-
+/**
+ * Antes cada componente que llamaba a este hook creaba su propia copia del estado,
+ * así que el ThemeToggle y el selector de Ajustes se desincronizaban. Ahora todos
+ * leen del mismo ThemeProvider.
+ */
 export function useTheme() {
-  const [theme, setTheme] = useState(readInitial);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(KEY, theme);
-    } catch {
-      /* sin almacenamiento, ignorar */
-    }
-  }, [theme]);
-
-  const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  }, []);
-
-  return { theme, setTheme, toggleTheme };
+  const ctx = useContext(ThemeContext);
+  if (!ctx) {
+    throw new Error('useTheme() debe usarse dentro de <ThemeProvider>.');
+  }
+  return ctx;
 }

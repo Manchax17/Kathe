@@ -1,24 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../supabaseClient';
-import {
-  STUDY_ORDERS,
-  STUDY_ORDER_LABELS,
-  STUDY_ORDER_SHORT,
-} from '../utils/studyQueue';
+import { STUDY_ORDERS, STUDY_ORDER_LABELS, STUDY_ORDER_SHORT } from '../utils/studyQueue';
 import { downloadDeckTxt } from '../utils/deckIO';
+import { useDecks } from '../hooks/useDecks';
 
-export default function DeckCard({
-  deck,
-  onOpen,
-  onRename,
-  onDelete,
-  onSelectOrder,
-}) {
+/**
+ * `readOnly` se usa en los perfiles ajenos: se ve el mazo, pero sin menú de
+ * opciones (no sos el dueño).
+ */
+export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
+  const { renameDeck, setStudyOrder, setPublic } = useDecks();
   const [openMenu, setOpenMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(deck.name);
   const menuRef = useRef(null);
+
   const orderKey = STUDY_ORDERS.includes(deck.study_order) ? deck.study_order : 'insertion';
+  const isPublic = Boolean(deck.is_public);
 
   useEffect(() => {
     const handler = (e) => {
@@ -41,17 +38,22 @@ export default function DeckCard({
       setNameDraft(deck.name);
       return;
     }
-    const { data, error } = await supabase
-      .from('decks')
-      .update({ name: trimmed })
-      .eq('id', deck.id)
-      .select();
+    const { error } = await renameDeck(deck.id, trimmed);
     if (error) {
       alert('No se pudo renombrar: ' + error.message);
       return;
     }
-    if (data && data[0]) onRename?.(data[0]);
     setRenaming(false);
+  };
+
+  const handleTogglePublic = async () => {
+    setOpenMenu(false);
+    const { error } = await setPublic(deck.id, !isPublic);
+    if (error) {
+      alert(
+        'No se pudo cambiar la visibilidad. Revisá que la migración 0003 esté aplicada en Supabase.',
+      );
+    }
   };
 
   return (
@@ -60,100 +62,113 @@ export default function DeckCard({
       className="relative bg-surface-elevated border border-rule rounded-3xl p-7 shadow-paper hover:shadow-paper-hover transition-all cursor-pointer anim-fade-in group"
       style={{ minHeight: '11rem', zIndex: openMenu ? 30 : undefined }}
     >
-      <div ref={menuRef} className="absolute top-3 right-3 z-10">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpenMenu((v) => !v);
-          }}
-          className="p-2 rounded-xl text-ink-muted hover:text-ink hover:bg-app transition-all"
-          aria-label="Opciones del mazo"
-          aria-expanded={openMenu}
-        >
-          <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
-          </svg>
-        </button>
-
-        {openMenu && (
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-0 top-11 w-64 max-h-[min(26rem,calc(100vh-6rem))] overflow-y-auto custom-scrollbar bg-surface-elevated border border-rule rounded-2xl shadow-paper p-2 text-left anim-fade-in"
+      {!readOnly && (
+        <div ref={menuRef} className="absolute top-3 right-3 z-10">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenMenu((v) => !v);
+            }}
+            className="p-2 rounded-xl text-ink-muted hover:text-ink hover:bg-app transition-all"
+            aria-label="Opciones del mazo"
+            aria-expanded={openMenu}
           >
-            <p className="px-3 py-2 text-[10px] font-black text-ink-muted uppercase tracking-[0.2em]">
-              Modo de estudio
-            </p>
-            <div className="space-y-1 pb-2 mb-1 border-b border-rule">
-              {STUDY_ORDERS.map((order) => (
-                <button
-                  key={order}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenMenu(false);
-                    onSelectOrder?.(deck.id, order);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center justify-between ${
-                    orderKey === order
-                      ? 'bg-accent-surface text-accent-ink'
-                      : 'text-ink-soft hover:bg-app'
-                  }`}
-                >
-                  <span>{STUDY_ORDER_LABELS[order]}</span>
-                  {orderKey === order && (
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                </button>
-              ))}
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
+            </svg>
+          </button>
+
+          {openMenu && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-11 w-64 max-h-[min(26rem,calc(100vh-6rem))] overflow-y-auto custom-scrollbar bg-surface-elevated border border-rule rounded-2xl shadow-paper p-2 text-left anim-fade-in"
+            >
+              <p className="px-3 py-2 text-[10px] font-black text-ink-muted uppercase tracking-[0.2em]">
+                Modo de estudio
+              </p>
+              <div className="space-y-1 pb-2 mb-1 border-b border-rule">
+                {STUDY_ORDERS.map((order) => (
+                  <button
+                    key={order}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenMenu(false);
+                      setStudyOrder(deck.id, order);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center justify-between ${
+                      orderKey === order
+                        ? 'bg-accent-surface text-accent-ink'
+                        : 'text-ink-soft hover:bg-app'
+                    }`}
+                  >
+                    <span>{STUDY_ORDER_LABELS[order]}</span>
+                    {orderKey === order && (
+                      <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenu(false);
+                  setRenaming(true);
+                  setNameDraft(deck.name);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all"
+              >
+                Renombrar
+              </button>
+
+              <button
+                onClick={handleTogglePublic}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all flex items-center gap-2"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                {isPublic ? 'Hacer privado' : 'Hacer público'}
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenu(false);
+                  downloadDeckTxt(deck);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all flex items-center gap-2"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                Descargar .txt
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenu(false);
+                  onDelete?.(deck);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-danger bg-danger-surface hover:opacity-80 transition-all flex items-center gap-2"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Eliminar mazo
+              </button>
             </div>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(false);
-                setRenaming(true);
-                setNameDraft(deck.name);
-              }}
-              className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all"
-            >
-              Renombrar
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(false);
-                downloadDeckTxt(deck);
-              }}
-              className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all flex items-center gap-2"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-              </svg>
-              Descargar .txt
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenMenu(false);
-                onDelete?.(deck);
-              }}
-              className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-danger bg-danger-surface hover:opacity-80 transition-all flex items-center gap-2"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Eliminar mazo
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {renaming ? (
         <form onSubmit={handleRenameSubmit} onClick={(e) => e.stopPropagation()}>
@@ -193,7 +208,7 @@ export default function DeckCard({
         </form>
       ) : (
         <>
-          <div className="pr-10">
+          <div className={readOnly ? '' : 'pr-10'}>
             <h3 className="font-display text-2xl text-ink leading-tight truncate" title={deck.name}>
               {deck.name}
             </h3>
@@ -203,7 +218,11 @@ export default function DeckCard({
           </div>
 
           <div className="absolute bottom-5 left-7 right-7 flex items-center justify-between">
-            {orderKey !== 'insertion' ? (
+            {isPublic ? (
+              <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-accent-ink bg-accent-surface px-2 py-1 rounded-lg">
+                Público
+              </span>
+            ) : orderKey !== 'insertion' ? (
               <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-accent-ink bg-accent-surface px-2 py-1 rounded-lg">
                 {STUDY_ORDER_SHORT[orderKey]}
               </span>
@@ -211,7 +230,7 @@ export default function DeckCard({
               <span />
             )}
             <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-ink-muted group-hover:text-accent transition-all">
-              Estudiar →
+              {readOnly ? 'Ver →' : 'Estudiar →'}
             </span>
           </div>
         </>

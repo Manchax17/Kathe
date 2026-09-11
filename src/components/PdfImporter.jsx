@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { supabase } from '../supabaseClient';
 import { extractPdfText } from '../utils/pdfText';
 import { extractCardsFromText } from '../utils/aiClient';
+import { useDecks } from '../hooks/useDecks';
 import CardsReviewModal from './CardsReviewModal';
 
 const STATUS = {
@@ -11,7 +11,17 @@ const STATUS = {
   review: 'review',
 };
 
-export default function PdfImporter({ decks, setDecks }) {
+/**
+ * PDF → flashcards con IA.
+ *
+ * Antes recibía `decks` / `setDecks` por props y, para crear el mazo destino,
+ * volvía a pedir el usuario con `supabase.auth.getUser()` en medio del guardado.
+ * Ahora lee la lista del contexto y escribe con `createDeck` / `updateWords`, así
+ * que no hay que re-fetchear nada ni recargar la página.
+ */
+export default function PdfImporter() {
+  const { decks, createDeck, updateWords } = useDecks();
+
   const [status, setStatus] = useState(STATUS.idle);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState('');
@@ -71,44 +81,29 @@ export default function PdfImporter({ decks, setDecks }) {
     try {
       let targetId = existingDeckId;
       let deckLabel;
+      let baseWords = {};
 
       if (mode === 'new') {
-        const { data, error } = await supabase
-          .from('decks')
-          .insert([{ name: deckName, words: {}, user_id: (await supabase.auth.getUser()).data.user.id }])
-          .select();
-        if (error) throw error;
-        targetId = data[0].id;
-        deckLabel = data[0].name;
+        const { data, error: createError } = await createDeck(deckName, {}, false);
+        if (createError) throw createError;
+        targetId = data.id;
+        deckLabel = data.name;
       } else {
         const existing = decks.find((d) => d.id === existingDeckId);
         if (!existing) throw new Error('El mazo seleccionado ya no existe.');
         deckLabel = existing.name;
+        baseWords = existing.words || {};
       }
 
-      const current = decks.find((d) => d.id === targetId);
-      const mergedWords = { ...(current?.words || {}) };
+      const mergedWords = { ...baseWords };
       cards.forEach(({ question, answer }) => {
         mergedWords[question] = answer;
       });
 
-      const { data, error } = await supabase
-        .from('decks')
-        .update({ words: mergedWords })
-        .eq('id', targetId)
-        .select();
-      if (error) throw error;
+      const { error: updateError } = await updateWords(targetId, mergedWords);
+      if (updateError) throw updateError;
 
-      setDecks((prev) => {
-        const exists = prev.some((d) => d.id === targetId);
-        return exists
-          ? prev.map((d) => (d.id === targetId ? data[0] : d))
-          : [data[0], ...prev];
-      });
-
-      alert(
-        `Se agregaron ${cards.length} tarjetas al mazo "${deckLabel}".`,
-      );
+      alert(`Se agregaron ${cards.length} tarjetas al mazo "${deckLabel}".`);
       reset();
     } catch (err) {
       alert('No se pudo guardar: ' + err.message);

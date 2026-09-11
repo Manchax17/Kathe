@@ -1,6 +1,15 @@
 import Logo from './Logo';
 
-export default function Auth({ email, setEmail, password, setPassword, handleAuth, message }) {
+export default function Auth({
+  email,
+  setEmail,
+  password,
+  setPassword,
+  username,
+  setUsername,
+  handleAuth,
+  message,
+}) {
   return (
     <div className="min-h-screen bg-app grid md:grid-cols-2">
       <div className="flex items-center justify-center p-8 lg:p-16 anim-fade-in">
@@ -29,6 +38,24 @@ export default function Auth({ email, setEmail, password, setPassword, handleAut
               className="w-full p-4 bg-surface border border-rule rounded-2xl outline-none focus:border-accent font-medium"
               style={{ color: 'var(--ink)' }}
             />
+
+            <div>
+              <input
+                type="text"
+                placeholder="Nombre de usuario"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-4 bg-surface border border-rule rounded-2xl outline-none focus:border-accent font-medium"
+                style={{ color: 'var(--ink)' }}
+              />
+              <p className="text-xs text-ink-muted mt-2 px-1">
+                Solo al crear cuenta. Así te encuentran los demás:{' '}
+                <span className="font-bold">
+                  @{(username || 'usuario').toLowerCase().replace(/[^a-z0-9_]/g, '')}
+                </span>
+              </p>
+            </div>
+
             <input
               type="password"
               required
@@ -86,7 +113,8 @@ export default function Auth({ email, setEmail, password, setPassword, handleAut
           </div>
           <div className="mt-8 flex flex-wrap justify-center gap-2 text-[10px] uppercase tracking-[0.2em] text-ink-muted">
             <span className="px-3 py-1 rounded-full border border-rule">Repaso espaciado</span>
-            <span className="px-3 py-1 rounded-full border border-rule">Sin distracciones</span>
+            <span className="px-3 py-1 rounded-full border border-rule">Mazos públicos</span>
+            <span className="px-3 py-1 rounded-full border border-rule">Chat</span>
             <span className="px-3 py-1 rounded-full border border-rule">Modo oscuro</span>
           </div>
         </div>

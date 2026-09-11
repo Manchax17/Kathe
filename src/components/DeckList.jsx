@@ -1,29 +1,19 @@
 import { useMemo, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { useNavigate } from 'react-router';
 import DeckCard from './DeckCard';
-import Logo from './Logo';
-import ThemeToggle from './ThemeToggle';
 import { downloadAllDecksTxt } from '../utils/deckIO';
-import { getStats } from '../utils/stats';
+import { useDecks } from '../hooks/useDecks';
+import { useStats } from '../hooks/useStats';
 
-export default function DeckList({
-  decks,
-  isCreatingDeck,
-  setIsCreatingDeck,
-  newDeckName,
-  setNewDeckName,
-  handleCreateDeck,
-  setCurrentDeck,
-  setCurrentIndex,
-  setIsFlipped,
-  signOut,
-  updateStudyOrder,
-  onRenameDeck,
-  onDeleteDeck,
-  onOpenSettings,
-}) {
+export default function DeckList() {
+  const navigate = useNavigate();
+  const { decks, createDeck, deleteDeck } = useDecks();
+  const stats = useStats();
+
   const [query, setQuery] = useState('');
-  const stats = useMemo(() => getStats(), []);
+  const [isCreating, setIsCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -35,53 +25,41 @@ export default function DeckList({
     );
   }, [decks, query]);
 
-  const handleDeleteDeck = async (deck) => {
-    const confirmed = window.confirm(
-      `¿Borrar el mazo "${deck.name}"? Esta acción no se puede deshacer.`,
-    );
-    if (!confirmed) return;
-    const { error } = await supabase.from('decks').delete().eq('id', deck.id);
-    if (error) {
-      alert('No se pudo borrar el mazo: ' + error.message);
-      return;
-    }
-    onDeleteDeck?.(deck.id);
-  };
-
   const totalWords = useMemo(
     () => decks.reduce((acc, d) => acc + Object.keys(d.words || {}).length, 0),
     [decks],
   );
 
-  return (
-    <div className="min-h-screen bg-app">
-      <header className="border-b border-rule bg-surface">
-        <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
-          <Logo size={26} />
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <button
-              onClick={onOpenSettings}
-              className="p-2.5 rounded-xl border border-rule text-ink-soft hover:bg-app transition-all"
-              title="Ajustes"
-              aria-label="Ajustes"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-            <button
-              onClick={signOut}
-              className="text-xs uppercase tracking-[0.2em] font-bold text-ink-muted hover:text-danger px-3 py-2 rounded-xl transition-all"
-            >
-              Salir
-            </button>
-          </div>
-        </div>
-      </header>
+  const openCreate = () => {
+    setName('');
+    setIsPublic(false);
+    setIsCreating(true);
+  };
 
-      <main className="max-w-6xl mx-auto px-6 py-10">
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const { error } = await createDeck(trimmed, {}, isPublic);
+    if (error) {
+      alert('No se pudo crear el mazo: ' + error.message);
+      return;
+    }
+    setIsCreating(false);
+  };
+
+  const handleDelete = async (deck) => {
+    const confirmed = window.confirm(
+      `¿Borrar el mazo "${deck.name}"? Esta acción no se puede deshacer.`,
+    );
+    if (!confirmed) return;
+    const { error } = await deleteDeck(deck.id);
+    if (error) alert('No se pudo borrar el mazo: ' + error.message);
+  };
+
+  return (
+    <>
+      <main className="w-full max-w-6xl mx-auto px-6 py-10">
         {/* Hero / saludo */}
         <section className="mb-10 anim-fade-in">
           <p className="font-display-italic text-ink-muted text-lg">Bienvenido de vuelta</p>
@@ -99,7 +77,13 @@ export default function DeckList({
         {/* Toolbar */}
         <section className="flex flex-wrap gap-3 mb-6 items-center justify-between">
           <div className="relative flex-1 min-w-[220px] max-w-md">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+            >
               <circle cx="11" cy="11" r="8" />
               <path d="M21 21l-4.35-4.35" />
             </svg>
@@ -123,7 +107,7 @@ export default function DeckList({
               </button>
             )}
             <button
-              onClick={() => setIsCreatingDeck(true)}
+              onClick={openCreate}
               className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover transition-all"
               style={{ color: 'var(--surface)' }}
             >
@@ -138,19 +122,13 @@ export default function DeckList({
             <DeckCard
               key={deck.id}
               deck={deck}
-              onOpen={(d) => {
-                setCurrentDeck(d);
-                setCurrentIndex(0);
-                setIsFlipped(false);
-              }}
-              onRename={onRenameDeck}
-              onDelete={handleDeleteDeck}
-              onSelectOrder={updateStudyOrder}
+              onOpen={(d) => navigate(`/deck/${d.id}`)}
+              onDelete={handleDelete}
             />
           ))}
 
           <button
-            onClick={() => setIsCreatingDeck(true)}
+            onClick={openCreate}
             className="border-2 border-dashed border-rule rounded-3xl p-7 flex flex-col items-center justify-center gap-3 hover:border-accent hover:bg-accent-surface/30 transition-all min-h-[11rem]"
           >
             <span className="w-12 h-12 rounded-full bg-accent-surface text-accent-ink flex items-center justify-center font-display text-2xl">
@@ -169,15 +147,15 @@ export default function DeckList({
         )}
       </main>
 
-      {isCreatingDeck && (
+      {isCreating && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 anim-fade-in"
           style={{ backgroundColor: 'rgba(31, 24, 16, 0.45)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setIsCreatingDeck(false)}
+          onClick={() => setIsCreating(false)}
         >
           <form
             onClick={(e) => e.stopPropagation()}
-            onSubmit={handleCreateDeck}
+            onSubmit={handleCreate}
             className="bg-surface-elevated border border-rule rounded-3xl w-full max-w-sm p-8 shadow-paper anim-pop"
           >
             <h3 className="font-display text-3xl text-ink mb-2">Nuevo mazo</h3>
@@ -189,9 +167,25 @@ export default function DeckList({
               className="w-full p-4 bg-app border border-rule rounded-2xl outline-none focus:border-accent font-display text-lg"
               style={{ color: 'var(--ink)' }}
               placeholder="Ej: Verbos irregulares"
-              value={newDeckName}
-              onChange={(e) => setNewDeckName(e.target.value)}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
+
+            <label className="mt-5 flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                className="mt-1 w-4 h-4 shrink-0 accent-[var(--accent)]"
+              />
+              <span className="text-sm text-ink-soft">
+                Hacerlo público
+                <span className="block text-xs text-ink-muted mt-0.5">
+                  Cualquiera podrá verlo en tu perfil. Podés cambiarlo después.
+                </span>
+              </span>
+            </label>
+
             <div className="flex gap-3 mt-6">
               <button
                 type="submit"
@@ -202,7 +196,7 @@ export default function DeckList({
               </button>
               <button
                 type="button"
-                onClick={() => setIsCreatingDeck(false)}
+                onClick={() => setIsCreating(false)}
                 className="flex-1 bg-app py-3 rounded-2xl font-bold text-ink-soft"
               >
                 Cancelar
@@ -211,7 +205,7 @@ export default function DeckList({
           </form>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { useAuth } from '../hooks/useAuth';
+import { useDecks } from '../hooks/useDecks';
 
 const SAMPLE = `# Comentarios opcionales con #
 hello\thola
@@ -7,7 +8,20 @@ world\tmundo
 "good morning"\t"buenos días"
 "complex answer with <br>tags"\t"primera línea<br>segunda línea"`;
 
-export default function FileImporter({ decks, userId }) {
+/**
+ * Importador de .txt / texto pegado.
+ *
+ * Antes recibía `decks` y `userId` por props, escribía con `supabase` directo y
+ * cerraba con `window.location.reload()` — algo que rompe de lleno con el router:
+ * tiraba abajo toda la app para mostrar un mazo nuevo.
+ *
+ * Ahora usa `createDeck` / `updateWords` del contexto, que ya actualizan la lista
+ * en memoria, así que la grilla reacciona sin recargar.
+ */
+export default function FileImporter() {
+  const { user } = useAuth();
+  const { decks, createDeck, updateWords, refresh } = useDecks();
+
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [pasted, setPasted] = useState('');
@@ -15,18 +29,15 @@ export default function FileImporter({ decks, userId }) {
 
   const importWords = async (deckName, newWords) => {
     const existing = decks.find((d) => d.name === deckName);
+
     if (existing) {
-      const updated = { ...existing.words, ...newWords };
-      const { error } = await supabase
-        .from('decks')
-        .update({ words: updated })
-        .eq('id', existing.id);
+      const { error } = await updateWords(existing.id, { ...existing.words, ...newWords });
       if (error) throw error;
       return { merged: true, count: Object.keys(newWords).length };
     }
-    const { error } = await supabase.from('decks').insert([
-      { name: deckName, words: newWords, user_id: userId },
-    ]);
+
+    if (!user) throw new Error('No hay sesión activa.');
+    const { error } = await createDeck(deckName, newWords, false);
     if (error) throw error;
     return { merged: false, count: Object.keys(newWords).length };
   };
@@ -39,7 +50,7 @@ export default function FileImporter({ decks, userId }) {
       const cols = line.split('\t');
       if (cols.length >= 2) {
         const q = cols[0].trim();
-        let a = cols[1].trim().replace(/^"|"$/g, '').replaceAll('""', '"');
+        const a = cols[1].trim().replace(/^"|"$/g, '').replaceAll('""', '"');
         if (q && a) words[q] = a;
       }
     });
@@ -63,11 +74,14 @@ export default function FileImporter({ decks, userId }) {
           ? `Se agregaron ${result.count} palabras al mazo "${deckName}".`
           : `Mazo "${deckName}" creado con ${result.count} palabras.`,
       );
-      window.location.reload();
+      setPasted('');
+      await refresh();
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
       setBusy(false);
+      // Permite volver a elegir el mismo archivo si la importación falló.
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -82,7 +96,8 @@ export default function FileImporter({ decks, userId }) {
         return;
       }
       await importWords(deckName, words);
-      window.location.reload();
+      setPasted('');
+      await refresh();
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {

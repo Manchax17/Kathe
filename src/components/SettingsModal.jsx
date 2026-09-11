@@ -1,9 +1,21 @@
 import { useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { useAuth } from '../hooks/useAuth';
+import { useDecks } from '../hooks/useDecks';
 import { useTheme } from '../hooks/useTheme';
 import { resetStats } from '../utils/stats';
+import ProfileEditor from './ProfileEditor';
 
-export default function SettingsModal({ open, onClose, user, onStatsReset }) {
+/**
+ * Ajustes: perfil, tema, cuenta y estadísticas.
+ *
+ * Antes recibía `user` por props (y solo desde App.jsx) y cerraba sesión con
+ * `window.location.reload()`, que tiraba abajo la app entera. Ahora lee del
+ * contexto y cierra con `signOut()`: el listener de sesión del AuthProvider se
+ * encarga de sacar al usuario y el router lo manda a /login.
+ */
+export default function SettingsModal({ open, onClose }) {
+  const { profile, user, signOut } = useAuth();
+  const { deleteAllDecks } = useDecks();
   const { theme, setTheme } = useTheme();
   const [confirmingReset, setConfirmingReset] = useState(false);
 
@@ -11,7 +23,6 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
 
   const handleResetStats = () => {
     resetStats();
-    onStatsReset?.();
     setConfirmingReset(false);
     alert('Estadísticas reiniciadas.');
   };
@@ -21,15 +32,15 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
       '¿Eliminar todos tus mazos? Esta acción no se puede deshacer.',
     );
     if (!confirmed) return;
-    try {
-      const { error } = await supabase.from('decks').delete().eq('user_id', user.id);
-      if (error) throw error;
-      alert('Mazos eliminados. Cerrando sesión…');
-      await supabase.auth.signOut();
-      window.location.reload();
-    } catch (err) {
-      alert('No se pudo eliminar: ' + err.message);
+
+    const { error } = await deleteAllDecks();
+    if (error) {
+      alert('No se pudo eliminar: ' + error.message);
+      return;
     }
+
+    alert('Mazos eliminados. Cerrando sesión…');
+    await signOut();
   };
 
   return (
@@ -40,7 +51,8 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-surface-elevated border border-rule rounded-3xl w-full max-w-md shadow-paper anim-pop"
+        className="bg-surface-elevated border border-rule rounded-3xl w-full max-w-md shadow-paper anim-pop flex flex-col"
+        style={{ maxHeight: '90vh' }}
       >
         <header className="px-6 py-5 border-b border-rule flex justify-between items-center">
           <h2 className="font-display text-2xl">Ajustes</h2>
@@ -55,7 +67,22 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
           </button>
         </header>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          <section>
+            <p className="text-xs uppercase tracking-[0.2em] text-ink-muted mb-3 font-bold">
+              Perfil
+            </p>
+            {profile ? (
+              // La `key` remonta el editor cuando el perfil cambia de dueño o
+              // termina de cargar, así que no hace falta sincronizarlo con un efecto.
+              <ProfileEditor key={profile.id} />
+            ) : (
+              <p className="text-sm text-ink-soft bg-app rounded-2xl p-3 border border-rule">
+                Todavía no tenés perfil. Revisá que la migración 0002 esté aplicada en Supabase.
+              </p>
+            )}
+          </section>
+
           <section>
             <p className="text-xs uppercase tracking-[0.2em] text-ink-muted mb-2 font-bold">Tema</p>
             <div className="flex gap-2 bg-app p-1 rounded-2xl border border-rule">
@@ -93,7 +120,9 @@ export default function SettingsModal({ open, onClose, user, onStatsReset }) {
           </section>
 
           <section>
-            <p className="text-xs uppercase tracking-[0.2em] text-ink-muted mb-2 font-bold">Estadísticas</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-ink-muted mb-2 font-bold">
+              Estadísticas
+            </p>
             {!confirmingReset ? (
               <button
                 onClick={() => setConfirmingReset(true)}

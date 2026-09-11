@@ -22,8 +22,40 @@ function readStats() {
   }
 }
 
+// ───────── Store suscribible ─────────
+// Antes cada vista llamaba a getStats() una sola vez al montarse, así que las
+// tarjetas de "Sesiones" y "Racha" se quedaban congeladas hasta un remontaje.
+// Ahora las mutaciones avisan y `useStats()` reacciona.
+//
+// El snapshot se cachea porque useSyncExternalStore exige que getSnapshot
+// devuelva la MISMA referencia mientras nada cambie (si no, entra en bucle).
+
+const listeners = new Set();
+let snapshot = null;
+
+function currentSnapshot() {
+  if (snapshot === null) snapshot = readStats();
+  return snapshot;
+}
+
+function emit() {
+  snapshot = readStats();
+  listeners.forEach((listener) => listener());
+}
+
+export function subscribeStats(listener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getStatsSnapshot() {
+  return currentSnapshot();
+}
+
 export function getStats() {
-  return readStats();
+  return currentSnapshot();
 }
 
 export function recordSession({ cardsAnswered, firstTryCorrect }) {
@@ -54,6 +86,8 @@ export function recordSession({ cardsAnswered, firstTryCorrect }) {
   } catch {
     // sin almacenamiento, ignorar
   }
+
+  emit();
   return next;
 }
 
@@ -63,5 +97,6 @@ export function resetStats() {
   } catch {
     // sin almacenamiento, ignorar
   }
+  emit();
   return defaultStats();
 }

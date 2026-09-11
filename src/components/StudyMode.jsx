@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { buildQueue, dailySeed } from '../utils/studyQueue';
 import { recordSession } from '../utils/stats';
 
-export default function StudyMode({ currentDeck, onExit }) {
+export default function StudyMode({ deck, onExit }) {
   const initialQueue = useMemo(
-    () => buildQueue(currentDeck.words || {}, currentDeck.study_order, { seed: dailySeed() }),
-    [currentDeck.words, currentDeck.study_order],
+    () => buildQueue(deck.words || {}, deck.study_order, { seed: dailySeed() }),
+    [deck.words, deck.study_order],
   );
   const [sessionQueue, setSessionQueue] = useState(initialQueue);
   const [totalInitial] = useState(initialQueue.length);
@@ -93,7 +93,7 @@ export default function StudyMode({ currentDeck, onExit }) {
       .slice(0, 5);
 
     return (
-      <div className="min-h-screen bg-app flex items-center justify-center p-6">
+      <div className="flex-1 flex items-center justify-center p-6 w-full">
         <div className="bg-surface-elevated border border-rule rounded-[2rem] w-full max-w-2xl p-10 shadow-paper anim-pop">
           <div className="text-center mb-8">
             <div className="text-6xl mb-3">🏆</div>
@@ -154,7 +154,7 @@ export default function StudyMode({ currentDeck, onExit }) {
   if (!currentPair) return null;
 
   return (
-    <div className="min-h-screen bg-app flex flex-col">
+    <div className="flex-1 flex flex-col w-full">
       <header className="border-b border-rule bg-surface">
         <div className="max-w-2xl mx-auto px-6 py-4 flex justify-between items-center">
           <button
