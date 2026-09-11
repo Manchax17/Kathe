@@ -5,11 +5,23 @@
  * tocar Tailwind ni recompilar: las utilidades (`text-accent`, `rounded-3xl`,
  * `bg-accent-surface`…) ya leen esas variables y cambian solas.
  *
- * Los acentos van como presets con su variante clara y oscura en vez de
- * calcularse con mate de color en runtime. Es más datos, pero garantiza que el
- * contraste quede bien en los dos modos; derivar "un poco más claro" y "un poco
- * más oscuro" de un hex suele producir texto ilegible en uno de los dos.
+ * Se compone de dos capas independientes:
+ * - el **tema base** (papel, glass, cappuccino, Tokyo Night), que define fondos,
+ *   tinta, sombras y tipografía, y vive en el CSS;
+ * - la **apariencia**, que elige el acento, la escala, las esquinas y la textura.
+ *
+ * Están separadas a propósito: así cualquier tema combina con cualquier acento,
+ * en vez de necesitar un preset por cada combinación.
+ *
+ * Los acentos preset van con su variante clara y oscura escritas a mano en vez
+ * de calcularse con matemática de color. Es más datos, pero garantiza contraste
+ * en los dos modos; derivar "un poco más claro" de un hex suele producir texto
+ * ilegible en uno de ellos.
  */
+
+// Con extensión a propósito: así este módulo también lo puede importar Node
+// directamente (lo hace `scripts/check-themes.mjs`), sin pasar por el bundler.
+import { DEFAULT_BASE_THEME, isBaseTheme } from './themePresets.js';
 
 export const ACCENTS = {
   terracota: {
@@ -74,8 +86,12 @@ export const RADII = {
 
 export const RADIUS_KEYS = Object.keys(RADII);
 
+/** Acento que trae Kathe de fábrica (el terracota del cuaderno). */
+export const DEFAULT_ACCENT = 'terracota';
+
 export const DEFAULT_APPEARANCE = {
-  accent: 'terracota',
+  baseTheme: DEFAULT_BASE_THEME,
+  accent: DEFAULT_ACCENT,
   scale: 'normal',
   radius: 'cozy',
   grain: true,
@@ -287,7 +303,7 @@ export function normalizeAppearance(raw) {
   // El acento es un preset con nombre o un hex propio. Cualquier otra cosa
   // ("", null, basura) cae al preset por defecto en vez de dejar la app sin color.
   const rawAccent = src.accent;
-  let accent = DEFAULT_APPEARANCE.accent;
+  let accent = DEFAULT_ACCENT;
   if (typeof rawAccent === 'string') {
     if (ACCENTS[rawAccent]) accent = rawAccent;
     else {
@@ -297,6 +313,7 @@ export function normalizeAppearance(raw) {
   }
 
   return {
+    baseTheme: isBaseTheme(src.baseTheme) ? src.baseTheme : DEFAULT_BASE_THEME,
     accent,
     scale: SCALES[src.scale] ? src.scale : DEFAULT_APPEARANCE.scale,
     radius: RADII[src.radius] ? src.radius : DEFAULT_APPEARANCE.radius,
@@ -318,12 +335,30 @@ export const isCustomHex = (accent) => typeof accent === 'string' && parseHex(ac
 export function isDefaultAppearance(appearance) {
   const a = normalizeAppearance(appearance);
   return (
+    a.baseTheme === DEFAULT_APPEARANCE.baseTheme &&
     a.accent === DEFAULT_APPEARANCE.accent &&
     a.scale === DEFAULT_APPEARANCE.scale &&
     a.radius === DEFAULT_APPEARANCE.radius &&
     a.grain === DEFAULT_APPEARANCE.grain &&
     a.customCss === ''
   );
+}
+
+/**
+ * Mejor color de texto para poner sobre un relleno de acento.
+ *
+ * Se decide midiendo, no a ojo: con un acento oscuro (terracota) gana el blanco,
+ * pero con uno claro (el violeta de Glass) el blanco queda ilegible y hace falta
+ * tinta oscura. Devuelve también el ratio, que la vista previa del editor usa
+ * para avisar cuando ninguna de las dos opciones llega a 4.5:1.
+ */
+export function bestTextOn(hex) {
+  const bg = parseHex(hex);
+  if (!bg) return null;
+  const white = { hex: '#ffffff', ratio: contrastRatio(bg, { r: 255, g: 255, b: 255 }) };
+  const dark = { hex: '#1a140d', ratio: contrastRatio(bg, { r: 26, g: 20, b: 13 }) };
+  const best = white.ratio >= dark.ratio ? white : dark;
+  return { color: best.hex, ratio: Math.round(best.ratio * 100) / 100 };
 }
 
 /** Devuelve un mapa de variable CSS → valor, listo para `setProperty`. */
@@ -338,12 +373,21 @@ export function appearanceToCssVars(appearance, mode) {
     ACCENTS[a.accent][dark ? 'dark' : 'light'];
 
   const radiusFactor = RADII[a.radius].factor;
+  const accentRgb = parseHex(palette.accent);
+  const onAccent = bestTextOn(palette.accent);
 
   const vars = {
     '--accent': palette.accent,
+    // Los temas translúcidos (glass) necesitan el acento en componentes sueltos
+    // para armar sus propios rgba(). Se publica acá y no se deriva en el CSS
+    // porque CSS no puede descomponer un hex en canales.
+    '--accent-rgb': accentRgb ? `${accentRgb.r}, ${accentRgb.g}, ${accentRgb.b}` : '',
     '--accent-soft': palette.soft,
     '--accent-ink': palette.ink,
     '--accent-surface': palette.surface,
+    // Texto sobre relleno de acento. Va acá y no en el CSS de cada tema porque
+    // depende del acento elegido, no del tema base.
+    '--on-accent': onAccent ? onAccent.color : '',
     '--kathe-font-scale': String(SCALES[a.scale].factor),
     '--kathe-grain': a.grain ? GRAIN_OPACITY[dark ? 'dark' : 'light'] : '0',
   };

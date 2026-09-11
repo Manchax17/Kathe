@@ -5,11 +5,11 @@ export default function Logo({ size = 28, className = '' }) {
       style={{ fontSize: size, lineHeight: 1 }}
     >
       <span
-        className="inline-flex items-center justify-center rounded-xl bg-accent text-ink-soft"
+        className="inline-flex items-center justify-center rounded-xl bg-accent"
         style={{
           width: size * 1.3,
           height: size * 1.3,
-          color: 'var(--surface)',
+          color: 'var(--on-accent)',
         }}
         aria-hidden
       >

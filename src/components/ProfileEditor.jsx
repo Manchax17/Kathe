@@ -150,7 +150,7 @@ export default function ProfileEditor() {
         type="submit"
         disabled={saving || !dirty}
         className="w-full bg-accent py-3 rounded-2xl font-bold shadow-paper disabled:opacity-50 transition-all"
-        style={{ color: 'var(--surface)' }}
+        style={{ color: 'var(--on-accent)' }}
       >
         {saving ? 'Guardando…' : dirty ? 'Guardar perfil' : 'Sin cambios'}
       </button>

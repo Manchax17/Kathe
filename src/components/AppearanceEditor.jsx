@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTheme } from '../hooks/useTheme';
+import { BASE_THEMES, BASE_THEME_KEYS } from '../utils/themePresets';
 import {
   ACCENTS,
   ACCENT_KEYS,
@@ -95,7 +96,7 @@ function CustomColor({ value, disabled, onPick }) {
         disabled={disabled || !parsed}
         onClick={commit}
         className="px-4 rounded-2xl bg-accent text-sm font-bold disabled:opacity-40 transition-all"
-        style={{ color: 'var(--surface)' }}
+        style={{ color: 'var(--on-accent)' }}
       >
         Usar
       </button>
@@ -109,7 +110,7 @@ function CustomColor({ value, disabled, onPick }) {
  * dispositivos.
  */
 export default function AppearanceEditor() {
-  const { theme, appearance, setAppearance, resetAppearance } = useTheme();
+  const { theme, appearance, setAppearance, setBaseTheme, resetAppearance } = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showCss, setShowCss] = useState(false);
@@ -138,12 +139,56 @@ export default function AppearanceEditor() {
 
   return (
     <div className="space-y-6">
+      {/* ───────── Tema base ───────── */}
+      <div>
+        <p className={`${LABEL} mb-2`}>Tema</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {BASE_THEME_KEYS.map((key) => {
+            const item = BASE_THEMES[key];
+            const active = appearance.baseTheme === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => setBaseTheme(key))}
+                aria-pressed={active}
+                title={item.description}
+                className={`text-left p-3 rounded-2xl border transition-all disabled:opacity-60 ${
+                  active
+                    ? 'border-accent bg-accent-surface'
+                    : 'border-rule bg-surface hover:bg-app'
+                }`}
+              >
+                <span className="flex gap-1 mb-2">
+                  {item.swatch.map((color) => (
+                    <span
+                      key={color}
+                      className="w-4 h-4 rounded-full border border-rule"
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </span>
+                <span className="block text-sm font-bold text-ink">{item.label}</span>
+                <span className="block text-[11px] text-ink-muted mt-0.5 leading-snug">
+                  {item.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div>
         <p className={`${LABEL} mb-2`}>Color de acento</p>
         <div className="flex flex-wrap gap-2 mb-3">
           {ACCENT_KEYS.map((key) => {
             const accent = ACCENTS[key];
             const active = appearance.accent === key;
+            // La muestra usa el tono que se va a aplicar de verdad en el modo
+            // actual: en oscuro los acentos son más claros, y mostrar el de
+            // claro daría una idea equivocada de lo que se está eligiendo.
+            const shown = accent[theme].accent;
             return (
               <button
                 key={key}
@@ -155,7 +200,7 @@ export default function AppearanceEditor() {
                 aria-pressed={active}
                 className="w-10 h-10 rounded-full border-2 transition-all disabled:opacity-60"
                 style={{
-                  backgroundColor: accent.swatch,
+                  backgroundColor: shown,
                   borderColor: active ? 'var(--accent-ink)' : 'var(--rule)',
                   transform: active ? 'scale(1.08)' : undefined,
                 }}
@@ -171,7 +216,7 @@ export default function AppearanceEditor() {
               borderColor: custom ? 'var(--accent-ink)' : 'var(--rule)',
               borderStyle: custom ? 'solid' : 'dashed',
               backgroundColor: custom ? appearance.accent : 'transparent',
-              color: custom ? 'var(--surface)' : 'var(--ink-muted)',
+              color: custom ? preview['--on-accent'] : 'var(--ink-muted)',
               transform: custom ? 'scale(1.08)' : undefined,
             }}
           >
@@ -264,7 +309,7 @@ export default function AppearanceEditor() {
                 disabled={busy || cssDraft === appearance.customCss}
                 onClick={() => run(() => setAppearance({ customCss: cssDraft }))}
                 className="px-4 py-2 rounded-2xl bg-accent text-sm font-bold disabled:opacity-40 transition-all"
-                style={{ color: 'var(--surface)' }}
+                style={{ color: 'var(--on-accent)' }}
               >
                 Guardar CSS
               </button>
@@ -298,7 +343,7 @@ export default function AppearanceEditor() {
           <button
             type="button"
             className="px-4 py-2 rounded-xl text-sm font-bold shadow-paper"
-            style={{ backgroundColor: preview['--accent'], color: 'var(--surface)' }}
+            style={{ backgroundColor: preview['--accent'], color: preview['--on-accent'] }}
           >
             Botón
           </button>

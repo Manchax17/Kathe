@@ -117,7 +117,7 @@ export default function ExplorePage() {
           type="submit"
           disabled={searching}
           className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover disabled:opacity-60 transition-all"
-          style={{ color: 'var(--surface)' }}
+          style={{ color: 'var(--on-accent)' }}
         >
           {searching ? 'Buscando…' : 'Buscar'}
         </button>

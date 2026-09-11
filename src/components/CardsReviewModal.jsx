@@ -208,7 +208,7 @@ export default function CardsReviewModal({
               onClick={handleSave}
               disabled={saving}
               className="flex-1 bg-accent py-3 rounded-2xl font-bold shadow-paper disabled:opacity-60"
-              style={{ color: 'var(--surface)' }}
+              style={{ color: 'var(--on-accent)' }}
             >
               {saving ? 'Guardando…' : `Guardar ${includedCount} tarjetas`}
             </button>

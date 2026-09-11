@@ -189,7 +189,7 @@ export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
             <button
               type="submit"
               className="flex-1 bg-accent py-2 rounded-xl font-bold text-sm"
-              style={{ color: 'var(--surface)' }}
+              style={{ color: 'var(--on-accent)' }}
             >
               Guardar
             </button>

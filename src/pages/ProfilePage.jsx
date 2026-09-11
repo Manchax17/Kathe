@@ -64,7 +64,7 @@ export default function ProfilePage() {
           <Link
             to="/explorar"
             className="inline-block bg-accent px-5 py-3 rounded-2xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             Ir a Explorar
           </Link>
@@ -115,7 +115,7 @@ export default function ProfilePage() {
               <Link
                 to="/ajustes"
                 className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover transition-all"
-                style={{ color: 'var(--surface)' }}
+                style={{ color: 'var(--on-accent)' }}
               >
                 Editar perfil
               </Link>
@@ -124,7 +124,7 @@ export default function ProfilePage() {
                 onClick={handleMessage}
                 disabled={messaging}
                 className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover disabled:opacity-60 transition-all"
-                style={{ color: 'var(--surface)' }}
+                style={{ color: 'var(--on-accent)' }}
               >
                 {messaging ? 'Abriendo…' : 'Enviar mensaje'}
               </button>

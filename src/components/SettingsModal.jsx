@@ -99,7 +99,7 @@ export default function SettingsModal({ open, onClose }) {
                       ? 'bg-accent text-white shadow-paper'
                       : 'text-ink-muted hover:text-ink'
                   }`}
-                  style={theme === opt.id ? { color: 'var(--surface)' } : undefined}
+                  style={theme === opt.id ? { color: 'var(--on-accent)' } : undefined}
                 >
                   {opt.label}
                 </button>
@@ -145,7 +145,7 @@ export default function SettingsModal({ open, onClose }) {
                   <button
                     onClick={handleResetStats}
                     className="flex-1 bg-danger text-white py-2 rounded-xl font-bold text-sm"
-                    style={{ color: 'var(--surface)' }}
+                    style={{ color: 'var(--on-accent)' }}
                   >
                     Sí, reiniciar
                   </button>

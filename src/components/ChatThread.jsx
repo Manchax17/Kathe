@@ -219,7 +219,7 @@ export default function ChatThread({ conversationId, peer }) {
           type="submit"
           disabled={!draft.trim() || sending}
           className="px-5 py-3 rounded-2xl bg-accent font-bold text-sm shadow-paper disabled:opacity-50 transition-all"
-          style={{ color: 'var(--surface)' }}
+          style={{ color: 'var(--on-accent)' }}
         >
           Enviar
         </button>

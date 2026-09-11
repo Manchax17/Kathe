@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ThemeContext } from './themeContext';
 import { useAuth } from '../hooks/useAuth';
+import { BASE_THEMES, THEME_ACCENT_DEFAULTS } from '../utils/themePresets';
 import {
   DEFAULT_APPEARANCE,
   appearanceToCssVars,
@@ -51,6 +52,16 @@ export function ThemeProvider({ children }) {
     Object.entries(vars).forEach(([name, value]) => root.style.setProperty(name, value));
   }, [appearance, theme]);
 
+  // El tema base es un atributo, no variables: su CSS vive en index.css colgado
+  // de [data-theme-base='...']. En el tema por defecto se saca el atributo para
+  // no dejar `data-theme-base="null"` en el HTML.
+  useEffect(() => {
+    const root = document.documentElement;
+    const attr = BASE_THEMES[appearance.baseTheme]?.attr;
+    if (attr) root.dataset.themeBase = attr;
+    else delete root.dataset.themeBase;
+  }, [appearance.baseTheme]);
+
   // El CSS propio va en una etiqueta <style> con `data-kathe-custom`, para poder
   // reemplazarla sin tocar ninguna otra. Se buscan todas por atributo y no por
   // id: con StrictMode el efecto puede correr dos veces, y así no queda
@@ -88,9 +99,35 @@ export function ThemeProvider({ children }) {
     return saveProfile({ appearance: DEFAULT_APPEARANCE });
   }, [saveProfile]);
 
+  /**
+   * Cambia el tema base y, con él, su acento característico.
+   *
+   * Un tema sin su color pierde la mitad del efecto: Glass con terracota o Tokyo
+   * Night con un naranja cálido no se parecen a lo que uno espera de esos temas.
+   * Es solo el valor inicial — si después el usuario elige otro acento, manda su
+   * elección.
+   */
+  const setBaseTheme = useCallback(
+    (baseTheme) => {
+      const accent = THEME_ACCENT_DEFAULTS[baseTheme];
+      const next = normalizeAppearance({ ...appearance, baseTheme, accent });
+      setDraft(next);
+      return saveProfile({ appearance: next });
+    },
+    [appearance, saveProfile],
+  );
+
   return (
     <ThemeContext.Provider
-      value={{ theme, setTheme, toggleTheme, appearance, setAppearance, resetAppearance }}
+      value={{
+        theme,
+        setTheme,
+        toggleTheme,
+        appearance,
+        setAppearance,
+        setBaseTheme,
+        resetAppearance,
+      }}
     >
       {children}
     </ThemeContext.Provider>

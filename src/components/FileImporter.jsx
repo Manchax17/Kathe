@@ -129,7 +129,7 @@ export default function FileImporter() {
           className={`cursor-pointer bg-accent px-5 py-3 rounded-2xl font-bold text-sm shadow-paper transition-all ${
             busy ? 'opacity-60 pointer-events-none' : 'hover:shadow-paper-hover'
           }`}
-          style={{ color: 'var(--surface)' }}
+          style={{ color: 'var(--on-accent)' }}
         >
           Seleccionar .txt
           <input

@@ -109,7 +109,7 @@ export default function DeckList() {
             <button
               onClick={openCreate}
               className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover transition-all"
-              style={{ color: 'var(--surface)' }}
+              style={{ color: 'var(--on-accent)' }}
             >
               + Nuevo mazo
             </button>
@@ -190,7 +190,7 @@ export default function DeckList() {
               <button
                 type="submit"
                 className="flex-1 bg-accent py-3 rounded-2xl font-bold shadow-paper"
-                style={{ color: 'var(--surface)' }}
+                style={{ color: 'var(--on-accent)' }}
               >
                 Crear
               </button>

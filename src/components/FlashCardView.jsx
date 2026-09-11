@@ -128,7 +128,7 @@ export default function FlashCardView({ deck }) {
           <button
             onClick={() => navigate(`/deck/${deck.id}/study`)}
             className="bg-accent px-4 py-2.5 rounded-xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all flex items-center gap-2"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             <span className="text-[10px]">▶</span> Estudiar
           </button>
@@ -176,7 +176,7 @@ export default function FlashCardView({ deck }) {
 
               <div
                 className="absolute inset-0 h-full w-full rounded-[2rem] bg-accent p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)] overflow-hidden"
-                style={{ color: 'var(--surface)' }}
+                style={{ color: 'var(--on-accent)' }}
               >
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] mb-3 opacity-60 text-center">
                   Respuesta

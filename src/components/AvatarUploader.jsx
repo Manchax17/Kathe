@@ -117,7 +117,7 @@ export default function AvatarUploader({ size = 96 }) {
             className={`cursor-pointer px-4 py-2.5 rounded-xl bg-accent text-sm font-bold shadow-paper transition-all ${
               busy ? 'opacity-60 pointer-events-none' : 'hover:shadow-paper-hover'
             }`}
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             {busy ? 'Subiendo…' : 'Cambiar foto'}
             <input

@@ -354,3 +354,75 @@ ya funciona. La sanitización quita `<style>`, `@import` y **cualquier `url(...)
 los remotos, porque un `url()` en CSS propio permite filtrar datos por la IP del visitante o
 rastrearlo. Está pensada para que un error de tipeo no rompa el layout, no como defensa contra
 un atacante: en una app de un solo autor, cada quien estiliza su propia sesión y nada más.
+
+### Temas base estándar
+
+La personalización tenía acentos pero un solo esqueleto visual. Ahora hay **ocho temas base**
+combinables con **cualquier acento**, más el acento libre y el CSS propio.
+
+| Tema | Carácter | `attr` |
+|---|---|---|
+| Papel | El cuaderno cálido de siempre | *(ninguno)* |
+| Glass | Vidrio esmerilado con manchas de color detrás | `glass` |
+| Cappuccino | Espresso y crema | `cappuccino` |
+| Tokyo Night | Azules y violetas nocturnos | `tokyo-night` |
+| Nord | Azules polares, grises fríos | `nord` |
+| Dracula | Oscuro violáceo con acentos eléctricos | `dracula` |
+| Gruvbox | Retro cálido, ámbar sobre grises terrosos | `gruvbox` |
+| Solarized | Tonos equilibrados del clásico | `solarized` |
+
+**Separación de responsabilidades.** Un **tema** define *estructura* (fondo, superficies,
+tinta, bordes, sombras, tipografía); la **apariencia** elige *acento, escala, esquinas y
+textura*. Son ortogonales a propósito: así ocho temas por siete acentos no son 56 presets, son
+dos listas independientes. El tema base se aplica con un atributo (`data-theme-base`) cuyo CSS
+vive en `index.css`; el acento se aplica con variables CSS desde el provider.
+
+**Tokens nuevos que necesitó el vidrio.** Los temas de papel podían ignorar el `backdrop-filter`
+porque sus superficies son opacas. El vidrio no: sin algo detrás que desenfocar, un
+`rgba(255,255,255,0.07)` no se lee como vidrio sino como una caja gris. Por eso se agregaron:
+
+- `--kathe-app-bg` — capa fija con manchas de gradiente radial, detrás de todo (`body::after`).
+- `--kathe-surface-filter` / `--kathe-app-filter` — el desenfoque, aplicado en las utilidades
+  de superficie.
+- `--kathe-grain-mode` — la textura de papel se multiplica en claro y se aclara (`screen`) en
+  oscuro; el vidrio invierte esa lógica.
+- `--kathe-tracking`, `--kathe-display-weight` — el vidrio pide letras más juntas y más peso
+  para compensar el fondo translúcido.
+
+**El texto de los botones dejó de ser `--surface`.** Era crema en toda la app porque el acento
+de fábrica es terracota oscuro. Con un acento claro —el violeta de Glass, el ámbar de Gruvbox—
+la crema sobre el botón queda ilegible. Ahora hay `--on-accent`, calculado **midiendo** el
+contraste contra el acento resuelto y eligiendo blanco o tinta oscura. Se aplicó a los ~20
+puntos donde había texto sobre relleno de acento (botones primarios, burbujas propias, el logo,
+la selección de texto).
+
+**Los temas también necesitan acentos distintos según el modo.** El violeta de Dracula
+(`#bd93f9`) se lee perfecto sobre su fondo oscuro y **no se lee** sobre su fondo claro
+(2.2:1). Por eso `THEME_ACCENT_DEFAULTS` trae un valor por modo: al elegir un tema se aplica
+su acento característico, y si el usuario después elige otro, manda su elección. La muestra
+del selector de acento también usa el tono del modo actual, para no mostrar un color que no es
+el que se va a aplicar.
+
+**Verificación (`npm run check:themes`).** Los temas son mucho CSS sin lógica, y un color mal
+elegido no rompe nada: simplemente deja texto que no se lee. El script recorre los 8 temas ×
+2 modos × 16 acentos y falla si:
+
+- el texto sobre un relleno de acento baja de 3:1 (interfaz) — avisa si baja de 4.5:1 (lectura);
+- el acento por defecto de un tema baja de 3:1 contra el fondo de ese tema;
+- la tinta de un tema baja de 4.5:1 contra su propio fondo;
+- dos temas comparten fondo, o un fondo "claro" no es claro.
+
+Encontró dos cosas reales que estaban mal: el violeta de Glass no se leía sobre el fondo claro
+de Glass (2.93:1), y **Cappuccino en oscuro era idéntico a Papel en oscuro** — el bloque
+`[data-theme-base='cappuccino']` no tenía variante oscura, así que elegir Cappuccino de noche no
+cambiaba nada. Se corrigieron ambos.
+
+**Dos trampas del CSS compilado** que aparecieron al revisar el bundle y no en el código fuente:
+
+1. `[class*='tracking-']` **no matchea las utilidades con corchetes** (`tracking-[0.2em]`). La
+   clase real en el DOM es `tracking-[0.2em]`, y el `\` del selector compilado es una barra
+   literal que ahí no matchea nada. Se enumeran las dos formas por separado, y `tracking-tight`
+   queda afuera a propósito: ahí el apretado es la intención, no el tema.
+2. Los valores `rgba(255,255,255,0.07)` se minifican a hex de 8 dígitos (`#ffffff12`). Es
+   equivalente, pero confunde al inspeccionar el bundle.
+

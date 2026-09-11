@@ -57,7 +57,7 @@ export default function NewWordModal({
           <button
             type="submit"
             className="flex-1 bg-accent py-3 rounded-2xl font-bold shadow-paper hover:shadow-paper-hover transition-all"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             Agregar palabra
           </button>

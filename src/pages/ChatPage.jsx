@@ -118,7 +118,7 @@ export default function ChatPage() {
           <Link
             to="/chat"
             className="inline-block bg-accent px-5 py-3 rounded-2xl font-bold text-sm shadow-paper hover:shadow-paper-hover transition-all"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             Volver a mis chats
           </Link>

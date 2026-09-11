@@ -142,7 +142,7 @@ export default function StudyMode({ deck, onExit }) {
           <button
             onClick={onExit}
             className="w-full bg-accent py-4 rounded-2xl font-bold shadow-paper hover:shadow-paper-hover transition-all"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             Volver a mis mazos
           </button>
@@ -198,7 +198,7 @@ export default function StudyMode({ deck, onExit }) {
             </div>
             <div
               className="absolute inset-0 h-full w-full rounded-[2rem] bg-accent p-10 flex flex-col [backface-visibility:hidden] [transform:rotateY(180deg)]"
-              style={{ color: 'var(--surface)' }}
+              style={{ color: 'var(--on-accent)' }}
             >
               <span className="text-[10px] uppercase tracking-[0.3em] font-bold opacity-60 text-center mb-4">
                 Respuesta
@@ -232,7 +232,7 @@ export default function StudyMode({ deck, onExit }) {
           <button
             onClick={() => handleAnswer(true)}
             className="bg-accent py-5 rounded-2xl font-bold uppercase tracking-[0.2em] hover:shadow-paper-hover transition-all"
-            style={{ color: 'var(--surface)' }}
+            style={{ color: 'var(--on-accent)' }}
           >
             <span className="block">Correcto</span>
             <span className="block text-[10px] opacity-80 mt-1">Tecla 2</span>

@@ -81,7 +81,7 @@ export default function Auth({
             <button
               type="submit"
               className="w-full bg-accent py-4 rounded-2xl font-bold shadow-paper hover:shadow-paper-hover transition-all"
-              style={{ color: 'var(--surface)' }}
+              style={{ color: 'var(--on-accent)' }}
             >
               Entrar
             </button>
