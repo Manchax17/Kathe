@@ -277,3 +277,45 @@ así que la causa estaba en `AuthProvider`:
 - Además, un `INITIAL_SESSION` sin sesión ya no desloguea a quien estaba adentro: la única
   forma legítima de perder la sesión es un `SIGNED_OUT` explícito (incluido el que emite
   Supabase si falla el refresh del token).
+
+### Personalización de apariencia (RF5)
+
+Hasta acá el único ajuste visual era claro/oscuro, que es global. Ahora cada usuario puede
+personalizar la app y **esa elección viaja entre dispositivos**, porque se guarda en su
+perfil y no solo en el navegador.
+
+**Migración `0006_user_theme.sql`** (aplicada): columna `profiles.appearance` de tipo `jsonb`
+con default `'{}'`. Se eligió JSONB y no una columna por ajuste para poder sumar opciones sin
+otra migración; y se llama `appearance` y no `theme` porque "theme" ya significa claro/oscuro
+en el resto del código.
+
+Qué se puede cambiar, desde **Ajustes → Apariencia**:
+
+| Ajuste | Opciones |
+|---|---|
+| Color de acento | 7 presets: terracota, bosque, océano, lavanda, mostaza, frambuesa, grafito |
+| Tamaño del texto | Compacta / Normal / Grande |
+| Esquinas | Redondeado / Cuadrado |
+| Textura de papel | Activada / Desactivada |
+
+**Cómo está implementado.** Todo se resuelve sobrescribiendo variables CSS en `<html>` desde
+el `ThemeProvider`; no hay que tocar Tailwind ni recompilar. Se comprobó en el CSS compilado
+que las utilidades ya leen variables:
+
+- `.rounded-3xl { border-radius: var(--radius-3xl) }` → reescribiendo los `--radius-*`
+  responde el control de esquinas.
+- `.text-accent { color: var(--accent) }` → reescribiendo `--accent` y compañía responde el
+  color.
+
+El tamaño del texto va como `--kathe-font-scale` sobre `html { font-size: calc(100% * …) }`.
+Al estar en `%` sobre la raíz, escala texto **y** espaciados de forma pareja (todo está en
+`rem`).
+
+**Por qué presets y no un selector de color libre.** Cada preset trae su variante clara y
+oscura ya ajustada a mano. Calcular "un poco más claro" y "un poco más oscuro" a partir de un
+hex suele dar texto ilegible en uno de los dos modos; los presets garantizan contraste.
+
+**Detalle de implementación**: el `ThemeProvider` pasó a vivir **dentro** del `AuthProvider`
+(antes estaba afuera) porque la apariencia se lee del perfil. La apariencia se **deriva** de
+`draft ?? profile.appearance` en vez de sincronizarse con un efecto: el cambio se ve al
+instante y no hay `setState` dentro de un `useEffect`.

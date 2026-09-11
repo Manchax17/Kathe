@@ -21,6 +21,9 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
   semilla diaria.
 - **Descargar** cualquier mazo como `.txt` (compatible con Anki).
 - **Modo oscuro / claro** con detección automática del sistema.
+- **Personalizá el diseño** (Ajustes → Apariencia): color de acento (7 presets), tamaño del
+  texto, esquinas redondeadas o cuadradas, y textura de papel. Se guarda en tu perfil, así que
+  te sigue en cualquier dispositivo.
 - **IA: PDF → flashcards** — subí un PDF y Gemini extrae los conceptos clave
   como tarjetas editables antes de guardarlas en un mazo.
 - **Estadísticas locales**: racha de días, dominio a la primera, puntos por sesión.
@@ -67,6 +70,8 @@ En el SQL Editor del dashboard, corré estas migraciones en orden:
 5. `supabase/migrations/0004_chat.sql` — `conversations` + `messages`, la RPC
    `get_or_create_conversation` y la publicación de `messages` en Realtime.
 6. `supabase/migrations/0005_avatars_storage.sql` — bucket público `avatars` (2 MiB).
+7. `supabase/migrations/0006_user_theme.sql` — columna `appearance` en `profiles`, donde cada
+   usuario guarda su personalización de diseño.
 
 Son **idempotentes**: se pueden correr más de una vez sin romper nada.
 
@@ -181,18 +186,18 @@ src/
                  ExplorePage, ProfilePage, ChatPage, SettingsPage
   components/    AppShell, Auth, DeckList, DeckCard, FlashCardView, StudyMode,
                  FileImporter, PdfImporter, CardsReviewModal, NewWordModal,
-                 SettingsModal, ProfileEditor, AvatarUploader, Avatar,
-                 ConversationList, ChatThread, MessageBubble, UserCard,
+                 SettingsModal, ProfileEditor, AppearanceEditor, AvatarUploader,
+                 Avatar, ConversationList, ChatThread, MessageBubble, UserCard,
                  Logo, ThemeToggle, Splash
   context/       ThemeProvider, AuthProvider, DecksProvider (+ sus contextos)
   hooks/         useTheme, useAuth, useDecks, useStats, useRouteDeck
-  utils/         studyQueue, deckIO, stats, pdfText, aiClient, username
+  utils/         studyQueue, deckIO, stats, pdfText, aiClient, username, appearance
   supabaseClient.js
 public/
   _redirects     fallback del SPA (/* -> /index.html 200)
 supabase/
   migrations/    0001 decks · study_order · 0002 profiles · 0003 public_decks
-                 0004 chat · 0005 avatars_storage
+                 0004 chat · 0005 avatars_storage · 0006 user_theme
   functions/     extract-cards (Edge Function con Gemini)
 ```
 
@@ -207,7 +212,7 @@ supabase/
 | `/explorar` | Buscar personas |
 | `/u/:username` | Perfil público |
 | `/chat` · `/chat/:conversationId` | Mensajes |
-| `/ajustes` | Perfil, tema, cuenta, estadísticas |
+| `/ajustes` | Perfil, apariencia, tema, cuenta, estadísticas |
 
 Diseñado por **Manchax**.
 

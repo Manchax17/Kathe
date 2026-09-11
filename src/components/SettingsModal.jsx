@@ -4,6 +4,7 @@ import { useDecks } from '../hooks/useDecks';
 import { useTheme } from '../hooks/useTheme';
 import { resetStats } from '../utils/stats';
 import ProfileEditor from './ProfileEditor';
+import AppearanceEditor from './AppearanceEditor';
 
 /**
  * Ajustes: perfil, tema, cuenta y estadísticas.
@@ -104,6 +105,13 @@ export default function SettingsModal({ open, onClose }) {
                 </button>
               ))}
             </div>
+          </section>
+
+          <section>
+            <p className="text-xs uppercase tracking-[0.2em] text-ink-muted mb-3 font-bold">
+              Apariencia
+            </p>
+            <AppearanceEditor />
           </section>
 
           <section>
