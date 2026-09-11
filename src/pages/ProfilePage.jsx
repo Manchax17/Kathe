@@ -23,10 +23,13 @@ export default function ProfilePage() {
     let active = true;
 
     (async () => {
+      // `ilike` y no `eq`: el username se guarda en minúsculas (lo garantiza el
+      // CHECK), pero si alguien escribe /u/Manchax2005 a mano, `eq` no lo
+      // encontraría y daría "Perfil no encontrado" por una diferencia de caja.
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
-        .eq('username', username)
+        .ilike('username', username)
         .maybeSingle();
 
       if (!active) return;

@@ -5,9 +5,16 @@ import UserCard from '../components/UserCard';
 
 const EMPTY = { q: '', status: 'idle', profiles: [], counts: {} };
 
-// El filtro `or` de PostgREST separa condiciones con comas, así que una coma en
-// la búsqueda rompería la query. La sacamos antes de armar el string.
-const sanitize = (raw) => raw.replace(/[,()]/g, ' ').trim();
+/**
+ * Limpia lo que escribió el usuario antes de armar el patrón.
+ *
+ * - El filtro `or` de PostgREST separa condiciones con comas y agrupa con
+ *   paréntesis, así que esos caracteres romperían la query.
+ * - El `@` se saca porque mostramos los perfiles como "@usuario" y el placeholder
+ *   invita a escribirlo, pero en la base el username se guarda sin arroba. Si no
+ *   se limpiara, buscar "@manchax2005" no encontraría nunca nada.
+ */
+const sanitize = (raw) => raw.replace(/[,()@]/g, ' ').replace(/\s+/g, ' ').trim();
 
 export default function ExplorePage() {
   const { user } = useAuth();
@@ -24,41 +31,54 @@ export default function ExplorePage() {
       return;
     }
 
+    if (!user?.id) return;
+
     setSearching(true);
     setResult((prev) => ({ ...prev, status: 'loading', q }));
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
-      .neq('id', user.id)
-      .limit(20);
+    // Sin try/catch, si una de las dos queries rechazaba, el setResult final
+    // nunca corría y el botón se quedaba colgado en "Buscando…" para siempre.
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
+        .neq('id', user.id)
+        .limit(20);
 
-    if (error) {
-      setResult({ q, status: 'error', profiles: [], counts: {} });
-      setSearching(false);
-      return;
-    }
+      if (error) throw error;
 
-    const profiles = data || [];
+      const profiles = data || [];
 
-    // Una sola query extra para los contadores, en vez de una por persona.
-    const counts = {};
-    const ids = profiles.map((p) => p.id);
-    if (ids.length > 0) {
-      const { data: rows } = await supabase
-        .from('decks')
-        .select('user_id')
-        .in('user_id', ids)
-        .eq('is_public', true);
+      // Una sola query extra para los contadores, en vez de una por persona.
+      const counts = {};
+      const ids = profiles.map((p) => p.id);
+      if (ids.length > 0) {
+        const { data: rows, error: decksError } = await supabase
+          .from('decks')
+          .select('user_id')
+          .in('user_id', ids)
+          .eq('is_public', true);
 
-      (rows || []).forEach((row) => {
-        counts[row.user_id] = (counts[row.user_id] || 0) + 1;
+        if (decksError) throw decksError;
+
+        (rows || []).forEach((row) => {
+          counts[row.user_id] = (counts[row.user_id] || 0) + 1;
+        });
+      }
+
+      setResult({ q, status: 'done', profiles, counts });
+    } catch (err) {
+      setResult({
+        q,
+        status: 'error',
+        profiles: [],
+        counts: {},
+        detail: err?.message ?? String(err),
       });
+    } finally {
+      setSearching(false);
     }
-
-    setResult({ q, status: 'done', profiles, counts });
-    setSearching(false);
   };
 
   const showResults = result.status === 'done' || result.status === 'loading';
@@ -106,6 +126,9 @@ export default function ExplorePage() {
       {result.status === 'error' && (
         <p className="text-sm text-danger bg-danger-surface px-4 py-3 rounded-2xl border border-rule">
           No se pudo buscar. Revisá que las migraciones 0002 y 0003 estén aplicadas.
+          {result.detail && (
+            <span className="block mt-1 opacity-80 font-mono text-xs">{result.detail}</span>
+          )}
         </p>
       )}
 
