@@ -21,9 +21,9 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
   semilla diaria.
 - **Descargar** cualquier mazo como `.txt` (compatible con Anki).
 - **Modo oscuro / claro** con detección automática del sistema.
-- **Personalizá el diseño** (Ajustes → Apariencia): color de acento (7 presets), tamaño del
-  texto, esquinas redondeadas o cuadradas, y textura de papel. Se guarda en tu perfil, así que
-  te sigue en cualquier dispositivo.
+- **Personalizá el diseño** (Ajustes → Apariencia): color de acento —7 presets, rueda de color
+  o un hex escrito a mano—, tamaño del texto, esquinas redondeadas o cuadradas, textura de papel
+  y **CSS propio**. Se guarda en tu perfil, así que te sigue en cualquier dispositivo.
 - **IA: PDF → flashcards** — subí un PDF y Gemini extrae los conceptos clave
   como tarjetas editables antes de guardarlas en un mazo.
 - **Estadísticas locales**: racha de días, dominio a la primera, puntos por sesión.

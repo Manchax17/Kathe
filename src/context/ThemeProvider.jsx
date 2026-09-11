@@ -5,6 +5,7 @@ import {
   DEFAULT_APPEARANCE,
   appearanceToCssVars,
   normalizeAppearance,
+  scopeCustomCss,
 } from '../utils/appearance';
 
 const KEY = 'kathe:theme';
@@ -49,6 +50,23 @@ export function ThemeProvider({ children }) {
     const vars = appearanceToCssVars(appearance, theme);
     Object.entries(vars).forEach(([name, value]) => root.style.setProperty(name, value));
   }, [appearance, theme]);
+
+  // El CSS propio va en una etiqueta <style> con `data-kathe-custom`, para poder
+  // reemplazarla sin tocar ninguna otra. Se buscan todas por atributo y no por
+  // id: con StrictMode el efecto puede correr dos veces, y así no queda
+  // duplicada.
+  useEffect(() => {
+    const scoped = scopeCustomCss(appearance.customCss);
+    const previous = document.querySelectorAll('style[data-kathe-custom]');
+    previous.forEach((el) => el.remove());
+
+    if (!scoped) return;
+
+    const style = document.createElement('style');
+    style.setAttribute('data-kathe-custom', '');
+    style.textContent = scoped;
+    document.head.appendChild(style);
+  }, [appearance.customCss]);
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));

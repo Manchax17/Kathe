@@ -319,3 +319,38 @@ hex suele dar texto ilegible en uno de los dos modos; los presets garantizan con
 (antes estaba afuera) porque la apariencia se lee del perfil. La apariencia se **deriva** de
 `draft ?? profile.appearance` en vez de sincronizarse con un efecto: el cambio se ve al
 instante y no hay `setState` dentro de un `useEffect`.
+
+### Color libre y CSS propio
+
+Los presets quedaron como atajo, pero ya no son el techo: ahora se puede elegir **cualquier
+color** (rueda de color o hex escrito) y sumar **CSS propio**.
+
+**El color no se elige: se genera la paleta.** El usuario elige un color y de ahí se derivan
+los cuatro que usa la app (`accent`, `soft`, `ink`, `surface`). Elegir uno solo no alcanza:
+con el mismo hex no se puede tener a la vez un botón y un texto legibles sobre su chip.
+
+Tres cosas que salieron de probar la generación con colores reales y que hubo que corregir:
+
+1. **El texto del chip se empujaba siempre en la misma dirección.** Sobre fondo claro el texto
+   tiene que ir hacia oscuro y sobre oscuro hacia claro; el primer intento lo movía siempre
+   para el mismo lado, así que un acento amarillo terminaba con texto blanco sobre chip claro,
+   ilegible. Ahora la dirección se elige midiendo el fondo.
+2. **`surface` es semi-transparente**, así que medir su contraste contra el color "de papel"
+   daba un número sin sentido (y `NaN`, porque el parser no entendía `rgba()`). Ahora se
+   compone el color efectivo sobre el fondo y se mide contra eso.
+3. **Los `rgba()` salían con decimales** (`rgba(173.92, 109.39, …)`). Válido en CSS pero sucio;
+   se redondean.
+
+Verificado con 9 colores (incluidos `#ffeb3b`, `#ffffff` y `#000000` como casos límite): en
+los dos modos el texto del chip queda siempre por encima de 4.5:1, el mínimo de WCAG AA.
+
+**Aviso de contraste, no bloqueo.** Si el acento elegido no llega a 3:1 contra el fondo, se
+avisa con el ratio exacto pero **se permite igual**. Es la apariencia del usuario; bloquear
+sería peor que avisar.
+
+**CSS propio.** Se aplica dentro de `@layer kathe-custom { :root { … } }`, que lo deja con
+menor prioridad que el diseño base: sirve para agregar o ajustar cosas, no para romper lo que
+ya funciona. La sanitización quita `<style>`, `@import` y **cualquier `url(...)`** — no solo
+los remotos, porque un `url()` en CSS propio permite filtrar datos por la IP del visitante o
+rastrearlo. Está pensada para que un error de tipeo no rompa el layout, no como defensa contra
+un atacante: en una app de un solo autor, cada quien estiliza su propia sesión y nada más.
