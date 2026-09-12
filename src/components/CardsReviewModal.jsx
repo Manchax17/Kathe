@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 export default function CardsReviewModal({
   cards: initialCards,
   decks = [],
+  /** Si la generación usó la key del propio usuario (ver AiProvider). */
+  usedOwnKey = false,
   onClose,
   onSave,
   saving,
@@ -78,6 +80,14 @@ export default function CardsReviewModal({
             La IA propuso {initialCards?.length ?? 0} tarjetas ·{' '}
             {includedCount} seleccionadas. Editá lo que quieras antes de guardar.
           </p>
+          {usedOwnKey && (
+            // Procedencia de la generación: si el resultado es pobre, el
+            // problema está en su key o su modelo, no en Kathe. Decirlo evita
+            // que lo reporte como un fallo de la app.
+            <p className="text-xs text-ink-muted mt-1">
+              Generado con tu propia API key.
+            </p>
+          )}
 
           <div className="flex gap-2 mt-3">
             <button

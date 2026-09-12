@@ -217,8 +217,8 @@ Se revisó el código y la base contra la lista de requisitos (RF1–RF8, RNF1�
 | RF3 | Perfil, publicaciones y fotos | ⚠️ Perfil ✅ · avatares ✅ · **publicaciones ❌** |
 | RF4 | Mensajes directos y grupos | ⚠️ DM 1:1 ✅ · **grupos ❌** |
 | RF5 | Personalizar el diseño (CSS/Tailwind) | ✅ 8 temas base × cualquier acento, color libre y CSS propio |
-| RF6 | Integración con IA mediante API key | ⚠️ Gemini del lado del servidor ✅ · **UI para clave propia ❌** |
-| RF7 | Multi-proveedor (Claude, Qwen, ChatGPT, Gemini, Hunyuan, NIM, OpenRouter, DeepSeek) | ❌ Solo Gemini |
+| RF6 | Integración con IA mediante API key | ✅ key propia por usuario + rate limit en la del servidor |
+| RF7 | Multi-proveedor (Claude, Qwen, ChatGPT, Gemini, Hunyuan, NIM, OpenRouter, DeepSeek) | ⚠️ adaptadores `gemini` + `openai_compatible` (cubre casi toda la lista) · falta Anthropic nativo |
 | RF8 | Conexión directa con ANKI | ❌ Solo exporta `.txt` |
 | RNF1 | Escritorio y móvil, estilo FB/Instagram | ⚠️ Responsive ✅ · **feed social ❌** |
 | RNF2 | Traducción generada por IA | ❌ |
@@ -506,4 +506,100 @@ El banco tuvo dos fallos propios antes de funcionar, los dos de rutas:
    durante el render, y el vendor de React no siempre la imprime.
 
 Con la verificación hecha, los tres archivos del banco se borraron: no quedan en el repositorio.
+
+---
+
+### IA con key propia y multi-proveedor (RF6 / RF7)
+
+La pregunta que abrió esto fue de manchax: *"¿todos los usuarios están usando mi API key de
+Gemini?"*. La respuesta era sí — una sola key del servidor, sin ningún tope, compartida por
+todos. Con dos usuarios no es un problema; con cien es una cuota que se agota un domingo.
+
+Se resolvió en tres piezas: rate limit, key propia, y adaptadores.
+
+#### El problema de seguridad que definió el diseño
+
+El primer intento natural era guardar la key del usuario en `profiles`, que ya existe y ya
+tiene su fila por usuario. **Era una trampa.** La política de SELECT de `profiles` es
+`qual: true` para cualquier usuario autenticado (de ahí sale Explorar), así que una columna
+`ai_api_key` en esa tabla sería legible por **todos los usuarios logueados**:
+
+```sql
+select id, username, ai_api_key from profiles;  -- fuga total, sin ningún error
+```
+
+RLS filtra **filas, no columnas**: no hay forma de expresar "que todos lean la fila pero solo
+el dueño lea esta columna". La solución real es una tabla aparte, que es la que se usa:
+
+| Tabla | Políticas | Se puede leer desde el cliente |
+|---|---|---|
+| `profiles` | SELECT `true` | todo (nombre, avatar, bio, apariencia) |
+| `user_ai_keys` | INSERT/UPDATE/DELETE del dueño, **sin SELECT** | nada — solo `service_role` |
+
+De ahí sale una consecuencia que atraviesa toda la UI: **el usuario no puede volver a leer su
+propia key**. Ni él. Entonces `AiProvider` no expone `apiKey` (sería mentir) sino `hasKey`, que
+es lo que la interfaz necesita para decir "configurada · reemplazar" o "sin configurar". El
+formulario siempre arranca vacío y el botón dice "Reemplazar", no "Ver".
+
+Un detalle de RLS que vale recordar: con RLS activo y **sin** política de SELECT, un `select`
+no devuelve error — devuelve **cero filas**. Así que "no hay filas" no distingue "no configuró
+nada" de "no tengo permiso para verlo". Para este caso da igual (en ambos no hay key propia),
+pero es una confusión que puede costar caro en otras tablas.
+
+#### Rate limit sin pg_cron
+
+El plan gratuito de Supabase no tiene `pg_cron` (verificado: las extensiones instaladas son
+`pg_graphql`, `pg_stat_statements`, `pgcrypto`, `plpgsql`, `supabase_vault`, `uuid-ossp`). Sin
+job programado no hay limpieza automática de contadores, así que la RPC hace dos cosas:
+
+1. **Limpia lo viejo en cada llamada** (`delete from ai_usage where window_start < now() - 2 days`).
+   Oportunista pero suficiente: la tabla se mantiene chica sola.
+2. **Cuenta e incrementa en una sola transacción** con un `insert ... on conflict do update
+   ... returning`. Contar y decidir en dos pasos deja una carrera: dos peticiones simultáneas
+   del mismo usuario podrían leer `calls = 19` las dos y pasar las dos.
+
+Y un detalle de comportamiento: cuando se pasa del tope, **se deshace el incremento**. Si los
+rechazos contaran, el que insiste nunca podría volver a usar la IA — su contador solo subiría.
+Es la diferencia entre un límite y un castigo.
+
+Verificado con una prueba real (5 llamadas, tope 3): las tres primeras pasan, las dos
+siguientes se bloquean. No se confió en que funcionara: se midió.
+
+Cuando el usuario trae su key, el rate limit **no aplica**: el gasto es suyo y merece usarlo
+sin tope nuestro.
+
+#### Adaptadores: por qué el RF7 es más chico de lo que parece
+
+La lista del RF7 (Claude, Qwen, ChatGPT, Gemini, Hunyuan, NIM, OpenRouter, DeepSeek) parece
+pedir ocho integraciones. No las pide: **casi todos exponen la misma API que OpenAI**
+(`POST /chat/completions` con un array `messages`), así que los cubre un solo adaptador
+cambiando `baseUrl` y modelo. DeepSeek, Qwen, OpenRouter, Groq y NIM entran por ahí sin código
+nuevo. Quedan fuera del molde Gemini (`contents`/`system_instruction`, key por query string) y
+Anthropic (`system` aparte, header `anthropic-version`) — cada uno necesita lo suyo.
+
+Hoy hay dos adaptadores, que cubren todo lo que se puede probar sin pagar. Sumar Anthropic es
+agregar una función en `providers.ts` y extender el `CHECK` de la migración. **Hay tres lugares
+que tienen que coincidir** cuando se agrega un proveedor: el adaptador, el catálogo
+`aiProviders.js`, y el `CHECK` de la base. Si no, la constraint rechaza una configuración que
+la UI ofrece.
+
+Detalle que apareció al escribir el adaptador de OpenAI: `response_format: {type:'json_object'}`
+**no lo soportan todos** los servicios compatibles. En vez de rendirse ante el 400, se
+reintenta sin ese campo — el prompt ya pide JSON, así que normalmente alcanza. Y como varios
+modelos envuelven la respuesta en un bloque markdown (` ```json … ``` `) cuando no hay
+`response_format`, el parser lo desempaqueta antes de parsear. Sin eso, la generación se
+perdería entera y el usuario vería "respuesta inesperada".
+
+#### Verificación
+
+- Base: políticas comprobadas (`INSERT`/`UPDATE`/`DELETE` del dueño, **ninguna** de SELECT),
+  y la RPC probada con 5 llamadas y tope 3.
+- UI: `lint` y `build` en verde, y la sección montada en el navegador con un banco temporal.
+  Se confirmó el estado inicial ("Usando la API key de Kathe · hasta 20 por hora"), el
+  formulario con Gemini seleccionado y sin campo de URL base, el cambio a DeepSeek
+  auto-rellenando `deepseek-chat` y sus sugerencias, y el caso "Otro" mostrando el campo de
+  URL base con el botón de guardar deshabilitado. Los tres archivos del banco se borraron.
+- **Pendiente de deploy**: la Edge Function todavía no está subida, así que en producción
+  sigue corriendo la versión vieja (solo Gemini, sin rate limit).
+
 

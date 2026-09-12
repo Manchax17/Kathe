@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { extractPdfText } from '../utils/pdfText';
 import { extractCardsFromText } from '../utils/aiClient';
 import { useDecks } from '../hooks/useDecks';
@@ -25,8 +26,15 @@ export default function PdfImporter() {
   const [status, setStatus] = useState(STATUS.idle);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState('');
+  // Separado de `error` porque además de mostrarlo cambia lo que se ofrece:
+  // ante un tope de cuota, un enlace a Ajustes.
+  const [rateLimited, setRateLimited] = useState(false);
   const [fileName, setFileName] = useState('');
   const [aiCards, setAiCards] = useState([]);
+  // Si la generación salió con la key del propio usuario en vez de la del
+  // servidor. Se muestra en la revisión: si el resultado es pobre, el problema
+  // está en su key o su modelo, y conviene que lo sepa.
+  const [usedOwnKey, setUsedOwnKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
@@ -37,8 +45,10 @@ export default function PdfImporter() {
     setStatus(STATUS.idle);
     setProgress(null);
     setError('');
+    setRateLimited(false);
     setFileName('');
     setAiCards([]);
+    setUsedOwnKey(false);
   };
 
   const processFile = async (file) => {
@@ -61,8 +71,9 @@ export default function PdfImporter() {
       // 2. Pedir flashcards a la IA
       setStatus(STATUS.thinking);
       setProgress(null);
-      const cards = await extractCardsFromText(text, { count: 30 });
+      const { cards, usedOwnKey } = await extractCardsFromText(text, { count: 30 });
       setAiCards(cards);
+      setUsedOwnKey(usedOwnKey);
       setStatus(STATUS.review);
 
       if (truncated) {
@@ -72,6 +83,7 @@ export default function PdfImporter() {
       }
     } catch (err) {
       setError(err.message || 'Algo salió mal procesando el PDF.');
+      setRateLimited(Boolean(err.rateLimited));
       setStatus(STATUS.idle);
     }
   };
@@ -184,14 +196,27 @@ export default function PdfImporter() {
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-3 bg-danger-surface border border-rule rounded-2xl p-4">
-          <p className="text-sm text-danger flex-1">{error}</p>
-          <button
-            onClick={reset}
-            className="text-[10px] uppercase tracking-[0.2em] font-bold text-danger hover:opacity-70 shrink-0"
-          >
-            Cerrar
-          </button>
+        <div className="mt-4 bg-danger-surface border border-rule rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <p className="text-sm text-danger flex-1">{error}</p>
+            <button
+              onClick={reset}
+              className="text-[10px] uppercase tracking-[0.2em] font-bold text-danger hover:opacity-70 shrink-0"
+            >
+              Cerrar
+            </button>
+          </div>
+          {rateLimited && (
+            // El tope de la key del servidor se destraba cargando la propia, así
+            // que ofrecemos el camino en vez de dejar al usuario esperando.
+            <Link
+              to="/ajustes"
+              onClick={reset}
+              className="inline-block mt-3 text-xs font-bold text-danger underline underline-offset-2 hover:opacity-70"
+            >
+              Cargar mi propia API key →
+            </Link>
+          )}
         </div>
       )}
 
@@ -200,6 +225,7 @@ export default function PdfImporter() {
           key="review"
           cards={aiCards}
           decks={decks}
+          usedOwnKey={usedOwnKey}
           onClose={reset}
           onSave={handleSave}
           saving={saving}

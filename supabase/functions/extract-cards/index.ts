@@ -1,21 +1,39 @@
 // supabase/functions/extract-cards/index.ts
-// Recibe texto de un PDF y devuelve flashcards generadas con Gemini.
+// Recibe texto de un PDF y devuelve flashcards generadas con IA.
+//
+// RF6: el usuario puede traer su propia API key (se guarda en `user_ai_keys`,
+//      que no tiene política de SELECT — ver migración 0008).
+// RF7: multi-proveedor, resuelto con adaptadores (ver providers.ts).
+//
+// Estrategia de key, en orden:
+//   1. Si el usuario configuró una → se usa la suya y NO se le cobra cuota a la
+//      del servidor, porque no la está gastando.
+//   2. Si no configuró ninguna → se usa la del servidor (GEMINI_API_KEY), con
+//      un rate limit por usuario para que nadie agote la cuota ajena.
+//
+// Rate limit: sin pg_cron en el plan gratuito, la RPC `consume_ai_quota` cuenta
+// e incrementa en una sola transacción y aprovecha cada llamada para limpiar lo
+// viejo. Cuando el usuario trae su key, el rate limit no aplica: el gasto es
+// suyo y merece usarlo sin tope nuestro.
 //
 // Setup:
 //   supabase secrets set GEMINI_API_KEY=tu_key
 //   supabase functions deploy extract-cards
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callProvider, type ProviderConfig } from './providers.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const MAX_CHARS = 90000;
 const DEFAULT_COUNT = 30;
+
+/** Cuántas generaciones puede hacer un usuario con la key del servidor. */
+const FREE_CALLS_PER_HOUR = 20;
 
 const SYSTEM_PROMPT = `Eres un asistente que crea flashcards de estudio a partir de texto académico.
 Recibes el contenido (parcial o completo) de un documento y debes extraer los conceptos, términos,
@@ -28,7 +46,10 @@ Reglas:
 - Prioriza: definiciones, conceptos clave, relaciones causa-efecto, terminología técnica.
 - NO inventes información que no esté en el texto.
 - Varía el tipo de preguntas: definiciones directas, "¿qué es X?", "¿por qué ocurre Y?".
-- Devuelve entre 10 y {MAX_CARDS} tarjetas según la riqueza del texto.`;
+- Devuelve entre 10 y {MAX_CARDS} tarjetas según la riqueza del texto.
+
+Responde SIEMPRE con un objeto JSON con esta forma exacta:
+{ "cards": [ { "question": "...", "answer": "..." } ] }`;
 
 function buildUserPrompt(text: string, count: number): string {
   return `Genera exactamente hasta ${count} flashcards a partir del siguiente texto del documento:
@@ -42,185 +63,210 @@ Devuelve SOLO el JSON con el schema indicado.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS_HEADERS });
+    return json({ ok: true }, 200, CORS_HEADERS);
   }
 
   try {
-    // 1. Validar JWT del usuario
+    // ── 1. Autenticación ──
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return json({ error: 'Falta token de autorización' }, 401);
-    }
+    if (!authHeader) return json({ error: 'Falta token de autorización' }, 401);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: { headers: { Authorization: authHeader } },
-      },
+      { global: { headers: { Authorization: authHeader } } },
     );
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      return json({ error: 'No autorizado' }, 401);
-    }
+    if (!user) return json({ error: 'No autorizado' }, 401);
 
-    // 2. Parsear body
+    // ── 2. Body ──
     const body = await req.json();
     const text = typeof body?.text === 'string' ? body.text.trim() : '';
     const count = clamp(Number(body?.count) || DEFAULT_COUNT, 5, 60);
 
     if (!text || text.length < 50) {
-      return json(
-        { error: 'El texto es demasiado corto para generar flashcards.' },
-        400,
-      );
+      return json({ error: 'El texto es demasiado corto para generar flashcards.' }, 400);
     }
 
     const safeText = text.slice(0, MAX_CHARS);
 
-    // 3. Llamar a Gemini
-    const apiKey = Deno.env.get('GEMINI_API_KEY');
-    if (!apiKey) {
-      return json(
-        { error: 'El servidor no tiene configurada la API key de Gemini (GEMINI_API_KEY).' },
-        500,
-      );
+    // ── 3. ¿Tiene el usuario su propia key? ──
+    // Se consulta con el cliente de service_role porque la tabla no tiene
+    // política de SELECT: con el cliente del usuario esta query devolvería
+    // cero filas siempre.
+    const admin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    const { data: userKey, error: keyErr } = await admin
+      .from('user_ai_keys')
+      .select('provider, api_key, base_url, model')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    // Sin la migración 0008 la tabla no existe. No es fatal: se sigue con la
+    // key del servidor, que es el comportamiento anterior.
+    const keysTableMissing =
+      !!keyErr && (keyErr.code === '42P01' || /does not exist/i.test(keyErr.message));
+    if (keyErr && !keysTableMissing) {
+      console.error('Error consultando user_ai_keys:', keyErr.message);
     }
 
-    const model = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
-    const prompt = SYSTEM_PROMPT.replace('{MAX_CARDS}', String(count));
+    // ── 4. Elegir credencial y adaptador ──
+    let config: ProviderConfig;
+    let usedOwnKey = false;
 
-    const { ok, status, body: geminiBody } = await callGeminiWithRetry(model, apiKey, prompt, buildUserPrompt(safeText, count));
+    if (userKey?.api_key) {
+      usedOwnKey = true;
+      config = {
+        adapter: userKey.provider === 'gemini' ? 'gemini' : 'openai_compatible',
+        apiKey: userKey.api_key,
+        baseUrl: userKey.base_url,
+        model: userKey.model,
+        systemPrompt: SYSTEM_PROMPT.replace('{MAX_CARDS}', String(count)),
+        userPrompt: buildUserPrompt(safeText, count),
+      };
+    } else {
+      const serverKey = Deno.env.get('GEMINI_API_KEY');
+      if (!serverKey) {
+        return json(
+          {
+            error:
+              'No hay ninguna API key disponible. Configurá la tuya en Ajustes → Inteligencia artificial.',
+          },
+          500,
+        );
+      }
 
-    if (!ok) {
-      console.error('Gemini error final:', status, geminiBody);
-      const detail = geminiBody.slice(0, 220).replace(/\s+/g, ' ');
+      // Rate limit SOLO cuando se gasta la key del servidor.
+      if (!keysTableMissing) {
+        const { data: quota, error: quotaErr } = await admin.rpc('consume_ai_quota', {
+          p_user_id: user.id,
+          p_limit: FREE_CALLS_PER_HOUR,
+          p_window: '1 hour',
+        });
+
+        if (quotaErr) {
+          // Si el rate limit falla, dejamos pasar: es preferible una cuota en
+          // riesgo que romperle la función a todo el mundo.
+          console.error('Rate limit no disponible:', quotaErr.message);
+        } else {
+          const row = Array.isArray(quota) ? quota[0] : quota;
+          if (row && row.allowed === false) {
+            const minutes = Math.max(
+              1,
+              Math.ceil((new Date(row.reset_at).getTime() - Date.now()) / 60000),
+            );
+            return json(
+              {
+                error:
+                  `Llegaste al límite de ${FREE_CALLS_PER_HOUR} generaciones por hora. ` +
+                  `Se renueva en ~${minutes} min. Para no tener tope, cargá tu propia API key ` +
+                  `en Ajustes → Inteligencia artificial.`,
+                retryAfterMinutes: minutes,
+              },
+              429,
+            );
+          }
+        }
+      }
+
+      config = {
+        adapter: 'gemini',
+        apiKey: serverKey,
+        baseUrl: null,
+        model: Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash',
+        systemPrompt: SYSTEM_PROMPT.replace('{MAX_CARDS}', String(count)),
+        userPrompt: buildUserPrompt(safeText, count),
+      };
+    }
+
+    // ── 5. Llamar al proveedor ──
+    const result = await callProvider(config);
+
+    if (!result.ok) {
+      console.error('Error del proveedor:', result.status, result.error);
+      const isTransient = result.status === 429 || result.status >= 500;
+      const suffix = usedOwnKey
+        ? ' Revisá tu API key y el modelo en Ajustes → Inteligencia artificial.'
+        : ' Intentá de nuevo en unos segundos.';
+
       return json(
         {
-          error: `Error del modelo de IA (${status}). ${
-            status === 503 || status === 429
-              ? 'Alta demanda en este momento; intentá de nuevo en unos segundos.'
-              : detail || 'Intenta de nuevo más tarde.'
-          }`,
+          error:
+            (isTransient
+              ? 'Alta demanda en el servicio de IA en este momento.'
+              : `Error del modelo de IA (${result.status}).`) + suffix,
+          detail: result.error,
         },
         502,
       );
     }
 
-    const geminiData = JSON.parse(geminiBody);
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-
+    // ── 6. Parsear y sanear ──
     let cards: Array<{ question: string; answer: string }> = [];
     try {
-      const parsed = JSON.parse(rawText);
-      cards = Array.isArray(parsed?.cards) ? parsed.cards : [];
-    } catch (_e) {
-      return json(
-        { error: 'La IA devolvió una respuesta inesperada. Intenta de nuevo.' },
-        502,
-      );
+      cards = parseCards(result.text);
+    } catch {
+      return json({ error: 'La IA devolvió una respuesta inesperada. Intentá de nuevo.' }, 502);
     }
-
-    cards = cards
-      .filter((c) => c && typeof c.question === 'string' && typeof c.answer === 'string')
-      .map((c) => ({
-        question: c.question.trim().slice(0, 500),
-        answer: c.answer.trim().slice(0, 2000),
-      }))
-      .filter((c) => c.question && c.answer);
 
     if (cards.length === 0) {
-      return json(
-        { error: 'No se pudieron generar flashcards a partir de este texto.' },
-        422,
-      );
+      return json({ error: 'No se pudieron generar flashcards a partir de este texto.' }, 422);
     }
 
-    return json({ cards });
+    return json({ cards, usedOwnKey }, 200);
   } catch (err) {
     console.error('extract-cards error:', err);
     return json({ error: 'Error interno del servidor.' }, 500);
   }
 });
 
-function json(payload: unknown, status = 200) {
+/**
+ * Los modelos a veces envuelven el JSON en un bloque markdown (```json … ```),
+ * sobre todo los compatibles con OpenAI cuando se les cae `response_format`.
+ * Se limpia antes de parsear, si no la generación se pierde entera.
+ */
+function parseCards(raw: string): Array<{ question: string; answer: string }> {
+  let text = (raw || '').trim();
+
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) text = fence[1].trim();
+
+  // Si hay texto alrededor del objeto, recortamos desde la primera llave.
+  if (!text.startsWith('{')) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end > start) text = text.slice(start, end + 1);
+  }
+
+  const parsed = JSON.parse(text);
+
+  // Algunos modelos devuelven el array pelado en vez de `{ cards: [...] }`.
+  const list = Array.isArray(parsed) ? parsed : parsed?.cards;
+  if (!Array.isArray(list)) return [];
+
+  return list
+    .filter((c) => c && typeof c.question === 'string' && typeof c.answer === 'string')
+    .map((c) => ({
+      question: c.question.trim().slice(0, 500),
+      answer: c.answer.trim().slice(0, 2000),
+    }))
+    .filter((c) => c.question && c.answer);
+}
+
+function json(payload: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    headers: { ...CORS_HEADERS, ...extraHeaders, 'Content-Type': 'application/json' },
   });
 }
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
-}
-
-async function callGeminiWithRetry(
-  model: string,
-  apiKey: string,
-  systemPrompt: string,
-  userPrompt: string,
-): Promise<{ ok: boolean; status: number; body: string }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const payload = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 8192,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          cards: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                question: { type: 'STRING' },
-                answer: { type: 'STRING' },
-              },
-              required: ['question', 'answer'],
-            },
-          },
-        },
-        required: ['cards'],
-      },
-    },
-  };
-
-  const maxAttempts = 3;
-  let lastStatus = 500;
-  let lastBody = '';
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      lastStatus = res.status;
-      lastBody = await res.text();
-      // Reintentar solo ante errores transitorios (429 / 5xx)
-      if (res.ok) return { ok: true, status: res.status, body: lastBody };
-      if (res.status !== 429 && res.status < 500) {
-        return { ok: false, status: res.status, body: lastBody };
-      }
-    } catch (e) {
-      lastStatus = 0;
-      lastBody = String((e as Error)?.message ?? e);
-    }
-
-    if (attempt < maxAttempts) {
-      const wait = 600 * 2 ** (attempt - 1);
-      console.warn(`Gemini reintento ${attempt} tras ${wait}ms`);
-      await new Promise((r) => setTimeout(r, wait));
-    }
-  }
-
-  return { ok: false, status: lastStatus, body: lastBody };
 }

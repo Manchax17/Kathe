@@ -29,8 +29,11 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
 - **Personalizá el diseño**: color de acento —7 presets, rueda de color o un hex escrito a
   mano—, tamaño del texto, esquinas redondeadas o cuadradas, textura de papel y **CSS propio**.
   Se guarda en tu perfil, así que te sigue en cualquier dispositivo.
-- **IA: PDF → flashcards** — subí un PDF y Gemini extrae los conceptos clave
+- **IA: PDF → flashcards** — subí un PDF y el modelo extrae los conceptos clave
   como tarjetas editables antes de guardarlas en un mazo.
+- **Tu propia API key de IA** (Ajustes → Inteligencia artificial): elegí entre Gemini, OpenAI,
+  DeepSeek, Qwen, OpenRouter o cualquier servicio compatible con la API de OpenAI. Con tu key no
+  hay tope de generaciones. Si no configurás ninguna, funciona igual con la del servidor.
 - **Estadísticas locales**: racha de días, dominio a la primera, puntos por sesión.
 - **Renombrar** y **eliminar** mazos desde el menú ⋯ de cada card.
 
@@ -79,6 +82,9 @@ En el SQL Editor del dashboard, corré estas migraciones en orden:
    usuario guarda su personalización de diseño.
 8. `supabase/migrations/0007_deck_description.sql` — columna `description` en `decks` (máx. 280
    caracteres), la descripción corta que se ve en la tarjeta del mazo.
+9. `supabase/migrations/0008_ai_providers.sql` — tabla `user_ai_keys` (la API key de IA del
+   usuario). **Sin política de SELECT a propósito**: el usuario puede escribir, reemplazar y
+   borrar su key, pero no volver a leerla. Ver la sección de IA más abajo.
 
 Son **idempotentes**: se pueden correr más de una vez sin romper nada.
 
@@ -89,7 +95,9 @@ Activá **Email auth** en `Authentication → Providers`.
 
 ### IA (PDF → flashcards)
 
-Usa una Supabase Edge Function + Google Gemini. Setup:
+Usa una Supabase Edge Function. La extracción de texto del PDF ocurre en el navegador
+(`pdfjs-dist`); solo el texto viaja al modelo, nunca el archivo. Solo PDFs con texto
+seleccionable (los escaneados quedan para una v2 con OCR).
 
 ```bash
 # 1. API key gratis en https://aistudio.google.com/apikey
@@ -99,9 +107,30 @@ supabase secrets set GEMINI_API_KEY=tu_key
 supabase functions deploy extract-cards
 ```
 
-La extracción de texto del PDF ocurre en el navegador (`pdfjs-dist`); solo el
-texto viaja a Gemini, nunca el archivo. Solo PDFs con texto seleccionable
-(los escaneados quedan para una v2 con OCR).
+**Dos formas de usarla, y la primera gana:**
+
+1. **La key del usuario** (Ajustes → Inteligencia artificial). Si cargó una, se usa esa y no
+   se le aplica ningún tope.
+2. **La key del servidor** (`GEMINI_API_KEY`), limitada a **20 generaciones por hora y por
+   usuario**. Se aplica solo cuando no hay key propia.
+
+La idea es que nadie quede afuera por no tener una key, pero que tampoco un solo usuario pueda
+agotar la cuota del servidor.
+
+**Multi-proveedor (RF7).** No hacen falta ocho integraciones: casi todos los servicios de la
+lista exponen la misma API que OpenAI (`POST /chat/completions` con `messages`), así que los
+cubre **un solo adaptador** cambiando `baseUrl` y modelo. Hoy hay dos adaptadores:
+
+| Adaptador | Cubre |
+|---|---|
+| `openai_compatible` | OpenAI, DeepSeek, Qwen, OpenRouter, Groq, NIM, servidores propios |
+| `gemini` | Google (usa `contents`/`system_instruction` y la key por query string) |
+
+El catálogo de proveedores que ve el usuario está en `src/utils/aiProviders.js`; los
+adaptadores, en `supabase/functions/extract-cards/providers.ts`. Para sumar uno nuevo hay que
+tocarlo en los tres lugares que tienen que coincidir: el adaptador, el catálogo, y el `CHECK`
+de `provider` en la migración 0008.
+
 
 ## Deploy
 
@@ -195,11 +224,12 @@ src/
                  FileImporter, PdfImporter, CardsReviewModal, NewWordModal,
                  SettingsModal, ProfileEditor, AppearanceEditor, AvatarUploader,
                  Avatar, ConversationList, ChatThread, MessageBubble, UserCard,
-                 Logo, ThemeToggle, Splash
-  context/       ThemeProvider, AuthProvider, DecksProvider (+ sus contextos)
-  hooks/         useTheme, useAuth, useDecks, useStats, useRouteDeck
-  utils/         studyQueue, deckIO, stats, pdfText, aiClient, username,
-                 appearance, themePresets
+                 Logo, ThemeToggle, Splash, AiSettings
+  context/       ThemeProvider, AuthProvider, DecksProvider, AiProvider
+                 (+ sus contextos)
+  hooks/         useTheme, useAuth, useDecks, useStats, useRouteDeck, useAi
+  utils/         studyQueue, deckIO, stats, pdfText, aiClient, aiProviders,
+                 username, appearance, themePresets
   supabaseClient.js
 scripts/
   check-themes.mjs   verifica contraste de temas y acentos (npm run check:themes)
@@ -208,8 +238,8 @@ public/
 supabase/
   migrations/    0001 decks · study_order · 0002 profiles · 0003 public_decks
                  0004 chat · 0005 avatars_storage · 0006 user_theme
-                 0007 deck_description
-  functions/     extract-cards (Edge Function con Gemini)
+                 0007 deck_description · 0008 ai_providers
+  functions/     extract-cards (Edge Function) + providers.ts (adaptadores)
 ```
 
 ### Rutas
