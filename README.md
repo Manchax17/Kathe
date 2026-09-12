@@ -6,6 +6,8 @@ oscuro que respetan tu vista.
 
 Inspirada en Anki, pero más visual y con un entorno cuidado.
 
+Nacido como proyecto personal al verme en la necesidad de hacer un ambiente mas positivo para compartir flashcards para memorizacion de forma agil en un ambiente que trata de ser mas moderno.
+
 > **Repositorio:** [github.com/Manchax17/Kathe](https://github.com/Manchax17/Kathe)
 > **App publicada:** [kathe-avl.pages.dev](https://kathe-avl.pages.dev)
 
