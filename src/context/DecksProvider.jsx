@@ -77,14 +77,21 @@ export function DecksProvider({ children }) {
   // Todas devuelven { data } o { error } para que la vista decida qué mostrar.
 
   const createDeck = useCallback(
-    async (name, words = {}, isPublic = false) => {
+    async (name, words = {}, isPublic = false, description = '') => {
       if (!user) return { error: new Error('No hay sesión activa.') };
-      const row = { name, words, user_id: user.id, is_public: isPublic };
+      const row = { name, words, user_id: user.id, is_public: isPublic, description };
 
       let result = await supabase.from('decks').insert([row]).select();
+      // Fallback en cascada: quitamos las columnas que puedan faltar por
+      // migraciones no aplicadas, de la más nueva a la más vieja.
       if (result.error && result.error.code === UNDEFINED_COLUMN) {
-        // Sin la migración 0003 la columna no existe: reintentamos sin ella.
         const fallback = { ...row };
+        delete fallback.description;
+        result = await supabase.from('decks').insert([fallback]).select();
+      }
+      if (result.error && result.error.code === UNDEFINED_COLUMN) {
+        const fallback = { ...row };
+        delete fallback.description;
         delete fallback.is_public;
         result = await supabase.from('decks').insert([fallback]).select();
       }
@@ -141,6 +148,23 @@ export function DecksProvider({ children }) {
       .eq('id', deckId)
       .select();
     if (err) return { error: err };
+    const updated = data[0];
+    setDecks((prev) => prev.map((d) => (d.id === deckId ? updated : d)));
+    return { data: updated };
+  }, []);
+
+  /** Descripción corta del mazo (RF1). Cadena vacía = sin descripción. */
+  const setDescription = useCallback(async (deckId, description) => {
+    const { data, error: err } = await supabase
+      .from('decks')
+      .update({ description: description.trim() })
+      .eq('id', deckId)
+      .select();
+    if (err) {
+      // Sin la migración 0007 la columna no existe: avisamos sin romper la app.
+      console.warn('Kathe: no se pudo guardar la descripción del mazo.', err.message);
+      return { error: err };
+    }
     const updated = data[0];
     setDecks((prev) => prev.map((d) => (d.id === deckId ? updated : d)));
     return { data: updated };
@@ -242,6 +266,7 @@ export function DecksProvider({ children }) {
         refresh,
         createDeck,
         renameDeck,
+        setDescription,
         deleteDeck,
         deleteAllDecks,
         setStudyOrder,

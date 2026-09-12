@@ -13,6 +13,7 @@ export default function DeckList() {
   const [query, setQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(false);
 
   const filtered = useMemo(() => {
@@ -21,6 +22,9 @@ export default function DeckList() {
     return decks.filter(
       (d) =>
         d.name.toLowerCase().includes(q) ||
+        // La descripción también se busca: si alguien la escribió, es porque
+        // quería poder encontrar el mazo por ella.
+        (d.description || '').toLowerCase().includes(q) ||
         Object.keys(d.words || {}).some((w) => w.toLowerCase().includes(q)),
     );
   }, [decks, query]);
@@ -32,6 +36,7 @@ export default function DeckList() {
 
   const openCreate = () => {
     setName('');
+    setDescription('');
     setIsPublic(false);
     setIsCreating(true);
   };
@@ -40,7 +45,7 @@ export default function DeckList() {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    const { error } = await createDeck(trimmed, {}, isPublic);
+    const { error } = await createDeck(trimmed, {}, isPublic, description.trim());
     if (error) {
       alert('No se pudo crear el mazo: ' + error.message);
       return;
@@ -169,6 +174,24 @@ export default function DeckList() {
               placeholder="Ej: Verbos irregulares"
               value={name}
               onChange={(e) => setName(e.target.value)}
+            />
+
+            <textarea
+              rows={2}
+              maxLength={280}
+              className="mt-3 w-full p-4 bg-app border border-rule rounded-2xl outline-none focus:border-accent text-sm resize-none custom-scrollbar"
+              style={{ color: 'var(--ink)' }}
+              placeholder="Descripción (opcional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter en un textarea de una línea y media casi siempre es un
+                // error: acá crea el mazo, como el input de arriba.
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleCreate(e);
+                }
+              }}
             />
 
             <label className="mt-5 flex items-start gap-3 cursor-pointer select-none">

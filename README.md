@@ -12,6 +12,8 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
 ## Características
 
 - **Mazos y palabras** guardados en Supabase (Postgres + Auth).
+- **Descripción por mazo** (hasta 280 caracteres): se escribe al crearlo o desde el menú ⋯ de la
+  tarjeta, se muestra recortada a dos líneas y también entra en la búsqueda.
 - **Agregar palabras a mano** desde el botón "Agregar" en cada mazo (pregunta + respuesta),
   además de importar o generar con IA.
 - **Importar** desde archivos `.txt` estilo Anki (pregunta ⇥ respuesta por línea) o pegar directo.
@@ -75,6 +77,8 @@ En el SQL Editor del dashboard, corré estas migraciones en orden:
 6. `supabase/migrations/0005_avatars_storage.sql` — bucket público `avatars` (2 MiB).
 7. `supabase/migrations/0006_user_theme.sql` — columna `appearance` en `profiles`, donde cada
    usuario guarda su personalización de diseño.
+8. `supabase/migrations/0007_deck_description.sql` — columna `description` en `decks` (máx. 280
+   caracteres), la descripción corta que se ve en la tarjeta del mazo.
 
 Son **idempotentes**: se pueden correr más de una vez sin romper nada.
 
@@ -204,6 +208,7 @@ public/
 supabase/
   migrations/    0001 decks · study_order · 0002 profiles · 0003 public_decks
                  0004 chat · 0005 avatars_storage · 0006 user_theme
+                 0007 deck_description
   functions/     extract-cards (Edge Function con Gemini)
 ```
 

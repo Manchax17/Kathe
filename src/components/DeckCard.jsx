@@ -8,14 +8,18 @@ import { useDecks } from '../hooks/useDecks';
  * opciones (no sos el dueño).
  */
 export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
-  const { renameDeck, setStudyOrder, setPublic } = useDecks();
+  const { renameDeck, setDescription, setStudyOrder, setPublic } = useDecks();
   const [openMenu, setOpenMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(deck.name);
+  // null = no se está editando la descripción. Se separa de `renaming` porque
+  // son dos campos distintos y editar uno no debería cerrar el otro.
+  const [descDraft, setDescDraft] = useState(null);
   const menuRef = useRef(null);
 
   const orderKey = STUDY_ORDERS.includes(deck.study_order) ? deck.study_order : 'insertion';
   const isPublic = Boolean(deck.is_public);
+  const description = deck.description || '';
 
   useEffect(() => {
     const handler = (e) => {
@@ -44,6 +48,24 @@ export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
       return;
     }
     setRenaming(false);
+  };
+
+  const handleDescriptionSubmit = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const trimmed = (descDraft ?? '').trim();
+    if (trimmed === description) {
+      setDescDraft(null);
+      return;
+    }
+    const { error } = await setDescription(deck.id, trimmed);
+    if (error) {
+      alert(
+        'No se pudo guardar la descripción. Revisá que la migración 0007 esté aplicada en Supabase.',
+      );
+      return;
+    }
+    setDescDraft(null);
   };
 
   const handleTogglePublic = async () => {
@@ -128,6 +150,17 @@ export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
               </button>
 
               <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenu(false);
+                  setDescDraft(description);
+                }}
+                className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all"
+              >
+                {description ? 'Editar descripción' : 'Agregar descripción'}
+              </button>
+
+              <button
                 onClick={handleTogglePublic}
                 className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-ink-soft hover:bg-app transition-all flex items-center gap-2"
               >
@@ -206,6 +239,48 @@ export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
             </button>
           </div>
         </form>
+      ) : descDraft !== null ? (
+        <form onSubmit={handleDescriptionSubmit} onClick={(e) => e.stopPropagation()}>
+          <h3 className="font-display text-xl text-ink leading-tight truncate mb-3" title={deck.name}>
+            {deck.name}
+          </h3>
+          <textarea
+            autoFocus
+            rows={3}
+            maxLength={280}
+            value={descDraft}
+            onChange={(e) => setDescDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                setDescDraft(null);
+              }
+            }}
+            placeholder="¿De qué trata este mazo?"
+            className="w-full bg-app border border-rule rounded-xl px-3 py-2 text-sm outline-none focus:border-accent resize-none custom-scrollbar"
+            style={{ color: 'var(--ink)' }}
+          />
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              type="submit"
+              className="flex-1 bg-accent py-2 rounded-xl font-bold text-sm"
+              style={{ color: 'var(--on-accent)' }}
+            >
+              Guardar
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDescDraft(null);
+              }}
+              className="flex-1 bg-app py-2 rounded-xl font-bold text-sm text-ink-soft"
+            >
+              Cancelar
+            </button>
+            <span className="text-[10px] text-ink-muted shrink-0">{descDraft.length}/280</span>
+          </div>
+        </form>
       ) : (
         <>
           <div className={readOnly ? '' : 'pr-10'}>
@@ -215,6 +290,17 @@ export default function DeckCard({ deck, onOpen, onDelete, readOnly = false }) {
             <p className="text-xs uppercase tracking-[0.25em] text-ink-muted mt-1 font-medium">
               {wordCount} {wordCount === 1 ? 'palabra' : 'palabras'}
             </p>
+            {description && (
+              // Dos líneas como mucho: la tarjeta tiene alto fijo y una
+              // descripción larga desbordaría el botón de abajo. El texto
+              // completo está en el title.
+              <p
+                className="text-sm text-ink-soft mt-3 leading-snug line-clamp-2"
+                title={description}
+              >
+                {description}
+              </p>
+            )}
           </div>
 
           <div className="absolute bottom-5 left-7 right-7 flex items-center justify-between">

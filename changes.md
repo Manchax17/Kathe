@@ -212,11 +212,11 @@ Se revisó el código y la base contra la lista de requisitos (RF1–RF8, RNF1�
 
 | # | Requisito | Estado |
 |---|---|---|
-| RF1 | Fichas y mazos, con descripción por mazo | ⚠️ Falta la columna `description` |
+| RF1 | Fichas y mazos, con descripción por mazo | ✅ `description` (migración 0007), alta, edición y búsqueda |
 | RF2 | Compartir mazos en línea | ✅ `is_public` + RLS + toggle + Explorar |
 | RF3 | Perfil, publicaciones y fotos | ⚠️ Perfil ✅ · avatares ✅ · **publicaciones ❌** |
 | RF4 | Mensajes directos y grupos | ⚠️ DM 1:1 ✅ · **grupos ❌** |
-| RF5 | Personalizar el diseño (CSS/Tailwind) | ⚠️ claro/oscuro ✅ · **por usuario ❌** |
+| RF5 | Personalizar el diseño (CSS/Tailwind) | ✅ 8 temas base × cualquier acento, color libre y CSS propio |
 | RF6 | Integración con IA mediante API key | ⚠️ Gemini del lado del servidor ✅ · **UI para clave propia ❌** |
 | RF7 | Multi-proveedor (Claude, Qwen, ChatGPT, Gemini, Hunyuan, NIM, OpenRouter, DeepSeek) | ❌ Solo Gemini |
 | RF8 | Conexión directa con ANKI | ❌ Solo exporta `.txt` |
@@ -425,4 +425,85 @@ cambiaba nada. Se corrigieron ambos.
    queda afuera a propósito: ahí el apretado es la intención, no el tema.
 2. Los valores `rgba(255,255,255,0.07)` se minifican a hex de 8 dígitos (`#ffffff12`). Es
    equivalente, pero confunde al inspeccionar el bundle.
+
+---
+
+### Descripción de mazo (RF1)
+
+El requisito pide "crear cards y decks con descripción por deck". Crear decks y fichas ya
+funcionaba; lo único que faltaba era el campo de descripción. Se cerró en las tres capas.
+
+**Base de datos** — migración `0007_deck_description`:
+
+```sql
+alter table public.decks
+  add column if not exists description text not null default '';
+
+alter table public.decks
+  drop constraint if exists decks_description_length;
+alter table public.decks
+  add constraint decks_description_length check (char_length(description) <= 280);
+```
+
+El `default ''` es a propósito: los mazos que ya existen quedan con cadena vacía y no con
+`null`, así el front no tiene que defenderse de dos casos ("sin descripción" y "descripción
+nula") que significan lo mismo. El tope de 280 no es capricho: la descripción se muestra
+recortada a **dos líneas** en la tarjeta, y la tarjeta tiene alto fijo — un texto sin límite
+desbordaría el botón de abajo.
+
+Verificado contra la base real, no solo leyendo el SQL: la columna existe con
+`text not null default ''`, la constraint figura como `CHECK ((char_length(description) <= 280))`,
+y un bloque de prueba confirmó que 280 caracteres entran, 281 se rechazan con `check_violation`,
+y el valor por defecto es la cadena vacía. Después se borraron las filas de prueba.
+
+**Proveedor** (`DecksProvider.jsx`) — dos cambios:
+
+- `createDeck(name, words, isPublic, description = '')`.
+- Nuevo `setDescription(deckId, description)`, calcado de `renameDeck`.
+
+La creación conserva el fallback en cascada por código `42703` (`undefined_column`): si la
+migración 0007 todavía no está aplicada en algún entorno, el insert reintenta sin `description`
+en vez de romper. Como el proyecto se despliega a un Supabase remoto, el mismo código tiene que
+funcionar antes y después de aplicar la migración.
+
+`setDescription` **no** revienta si falta la columna: avisa por consola y devuelve el error,
+porque una descripción que no se guarda no justifica tirar abajo la pantalla de mazos.
+
+**Interfaz** — el campo se puede escribir en dos lugares y se lee en uno:
+
+- Alta de mazo (`DeckList.jsx`): un `<textarea rows={2} maxLength={280}>` debajo del nombre.
+  Enter envía; Shift+Enter hace salto de línea.
+- Edición (`DeckCard.jsx`): entrada **"Editar descripción"** o **"Agregar descripción"** en el
+  menú, según si ya tiene una. Abre un formulario con contador `n/280` en vivo y Escape para
+  cancelar.
+- Lectura: la descripción se muestra bajo el contador de palabras, con `line-clamp-2` (dos
+  líneas y puntos suspensivos) y el texto completo en el atributo `title`.
+- La búsqueda de mazos (`DeckList.jsx`) ahora también mira la descripción, no solo el nombre.
+
+**Un detalle de estado**: el borrador de la descripción (`descDraft`) se guarda aparte del de
+renombrado (`nameDraft`). `null` significa "no se está editando", y es un valor distinto de `''`
+—que es una descripción vacía legítima, la de un mazo al que le sacás el texto—. Mezclarlos
+haría que abrir un editor cerrara el otro.
+
+**Verificación de la interfaz.** El lint, el build y el chequeo de temas pasaban, pero eso no
+prueba que la descripción *se vea*: los tres son análisis estático. Y no se podía entrar a la
+app porque no tengo—ni debo tener—la contraseña de la cuenta. Se armó entonces un banco de
+pruebas temporal que monta `DeckCard` con tres mazos falsos (con descripción, sin descripción, y
+con una larga) sobre un contexto de mentira. Sirvió para confirmar en el navegador: tres tarjetas
+renderizadas, descripciones visibles, la larga cortada exactamente a dos líneas
+(`-webkit-line-clamp: 2` y `overflow: hidden` medidos con `getComputedStyle`, no a ojo),
+el menú diciendo "Editar descripción" en un caso y "Agregar descripción" en el otro, y el
+editor abriendo con el texto precargado, `maxLength=280` y el contador marcando `95/280`.
+
+El banco tuvo dos fallos propios antes de funcionar, los dos de rutas:
+
+1. Los archivos viven **dentro** de `src/`, así que `import ... from './src/components/DeckCard'`
+   no resuelve. Va `'./components/DeckCard'`.
+2. La página quedaba en blanco **sin ningún error en consola**. La causa era que `ThemeProvider`
+   llama a `useAuth()`, y al no haber `AuthProvider` encima el hook lanza y React desmonta el
+   árbol entero en silencio. Se añadió un `AuthContext.Provider` falso y aparecieron las tres
+   tarjetas. Vale recordarlo: un árbol de React que queda vacío casi siempre es una excepción
+   durante el render, y el vendor de React no siempre la imprime.
+
+Con la verificación hecha, los tres archivos del banco se borraron: no quedan en el repositorio.
 
