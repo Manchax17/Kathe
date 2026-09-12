@@ -120,14 +120,25 @@ export default function ProfilePage() {
                 Editar perfil
               </Link>
             ) : (
-              <button
-                onClick={handleMessage}
-                disabled={messaging}
-                className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover disabled:opacity-60 transition-all"
-                style={{ color: 'var(--on-accent)' }}
-              >
-                {messaging ? 'Abriendo…' : 'Enviar mensaje'}
-              </button>
+              <>
+                <button
+                  onClick={handleMessage}
+                  disabled={messaging}
+                  className="px-5 py-3 rounded-2xl bg-accent text-sm font-bold shadow-paper hover:shadow-paper-hover disabled:opacity-60 transition-all"
+                  style={{ color: 'var(--on-accent)' }}
+                >
+                  {messaging ? 'Abriendo…' : 'Enviar mensaje'}
+                </button>
+
+                {/* Atajo: arma el grupo con esta persona ya adentro. El grueso de
+                    la creación vive en el modal del chat, acá solo se pre-carga. */}
+                <Link
+                  to={`/chat?con=${profile.username}`}
+                  className="px-5 py-3 rounded-2xl border border-rule text-sm font-bold text-ink-soft hover:bg-app transition-all"
+                >
+                  Crear grupo
+                </Link>
+              </>
             )}
           </div>
 

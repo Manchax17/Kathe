@@ -215,13 +215,15 @@ Se revisó el código y la base contra la lista de requisitos (RF1–RF8, RNF1�
 | RF1 | Fichas y mazos, con descripción por mazo | ✅ `description` (migración 0007), alta, edición y búsqueda |
 | RF2 | Compartir mazos en línea | ✅ `is_public` + RLS + toggle + Explorar |
 | RF3 | Perfil, publicaciones y fotos | ⚠️ Perfil ✅ · avatares ✅ · **publicaciones ❌** |
-| RF4 | Mensajes directos y grupos | ⚠️ DM 1:1 ✅ · **grupos ❌** |
+| RF4 | Mensajes directos y grupos | ✅ DM 1:1 + grupos |
 | RF5 | Personalizar el diseño (CSS/Tailwind) | ✅ 8 temas base × cualquier acento, color libre y CSS propio |
 | RF6 | Integración con IA mediante API key | ✅ key propia por usuario + rate limit en la del servidor |
 | RF7 | Multi-proveedor (Claude, Qwen, ChatGPT, Gemini, Hunyuan, NIM, OpenRouter, DeepSeek) | ⚠️ adaptadores `gemini` + `openai_compatible` (cubre casi toda la lista) · falta Anthropic nativo |
 | RF8 | Conexión directa con ANKI | ❌ Solo exporta `.txt` |
 | RNF1 | Escritorio y móvil, estilo FB/Instagram | ⚠️ Responsive ✅ · **feed social ❌** |
 | RNF2 | Traducción generada por IA | ❌ |
+
+> Actualización: el RF4 quedó cerrado, ver la sección de grupos más abajo.
 
 ### Arquitectura de datos elegida
 
@@ -601,5 +603,151 @@ perdería entera y el usuario vería "respuesta inesperada".
   URL base con el botón de guardar deshabilitado. Los tres archivos del banco se borraron.
 - **Pendiente de deploy**: la Edge Function todavía no está subida, así que en producción
   sigue corriendo la versión vieja (solo Gemini, sin rate limit).
+
+---
+
+### Grupos de chat (RF4)
+
+El RF4 pedía "mensajes directos y grupos". Los DM 1:1 ya estaban desde la migración 0004;
+faltaban los grupos.
+
+#### Por qué un grupo NO reusa `conversations`
+
+El primer impulso fue generalizar `conversations` a N participantes. Se descartó: esa tabla
+tiene un invariante que le da sentido —la pareja ordenada `user_low < user_high` con un UNIQUE
+encima— y es lo único que impide que existan dos hilos entre las mismas dos personas. Un grupo
+no tiene pareja, tiene un conjunto. Forzarlo obligaba a relajar el CHECK y el UNIQUE y a llenar
+de nulos las columnas de participantes, o sea a destruir exactamente lo que esa migración se
+preocupaba por garantizar.
+
+En cambio `group_messages` **espeja** `messages` columna por columna y política por política. La
+duplicación es real pero acotada, y el front reusa `MessageBubble`. La alternativa —una tabla
+`conversations` polimórfica— haría que toda query de DM tuviera que discriminar por tipo sin
+ganar nada.
+
+#### Tablas y RPC (migración `0009_groups.sql`)
+
+| Tabla | Qué guarda | Políticas |
+|---|---|---|
+| `groups` | id, name (1–60), description (≤280), `created_by`, created_at | SELECT si soy miembro · UPDATE/DELETE solo el admin · **sin INSERT** |
+| `group_members` | (group_id, user_id) PK, role `admin`/`member`, joined_at | SELECT si soy miembro · INSERT si soy miembro · DELETE solo mi fila |
+| `group_messages` | id, group_id, sender_id, body (1–2000), created_at | SELECT/INSERT si soy miembro · **sin UPDATE ni DELETE** |
+
+Tres funciones:
+
+- `is_group_member(group, user)` — SECURITY DEFINER. **No es un adorno**: ver la trampa de abajo.
+- `create_group(name, members[])` — crea el grupo y la membresía del creador **en una sola
+  transacción**. `groups` no tiene política de INSERT justamente para forzar esto: si se hiciera
+  en dos inserts, quedaría una ventana con un grupo de cero miembros, y como el SELECT exige
+  pertenecer, ese grupo no lo vería nadie — ni su creador.
+- `remove_group_member(group, user)` — expulsa. Valida el rol explícitamente y da mensajes
+  claros ("Solo el administrador puede quitar miembros").
+
+#### Las dos trampas de RLS con membresía
+
+Acá está lo que costó tiempo, y vale escribirlo porque no es obvio.
+
+**1. Recursión directa (42P17).** Una política sobre `group_members` que consulte
+`group_members` se llama a sí misma, y Postgres la corta:
+
+```
+infinite recursion detected in policy for relation "group_members"
+```
+
+No es un warning: **la query falla entera**. La salida es una función SECURITY DEFINER
+(`is_group_member`), que corre como el dueño de la tabla y por lo tanto no vuelve a evaluar la
+política. Es el patrón estándar, y de paso es más rápido: la membresía se resuelve una vez.
+
+**2. Recursión indirecta, que NO falla: pasa de más.** Esta es la peligrosa. Con
+`is_group_member` ya no había bucle directo, pero la política de DELETE era:
+
+```sql
+using (
+  user_id = auth.uid()
+  or exists (select 1 from public.groups g
+              where g.id = group_members.group_id and g.created_by = auth.uid())
+)
+```
+
+La segunda rama consulta `groups`, y **el SELECT de `groups` llama a `is_group_member`**. Ese
+ciclo atraviesa una función, así que el detector de Postgres no lo ve. En vez de fallar, evalúa
+de más.
+
+Se midió, no se dedujo. La prueba que lo destapó fue simple: un miembro se va del grupo y se
+cuenta cuántos quedan.
+
+```
+antes:  "se fue solo; quedan (esperado 3): 0"     ← se llevó a TODOS
+después:"se fue solo; quedan (esperado 3): 3"
+```
+
+Un agujero silencioso: cualquiera podía vaciar un grupo ajeno borrando su propia membresía. Las
+dos reglas que salen de esto:
+
+- **La política de DELETE de `group_members` no lleva subconsultas.** Solo `user_id = auth.uid()`.
+- **La expulsión no es un DELETE del cliente**, es la RPC `remove_group_member`, que valida en un
+  único punto sin depender de cuántas políticas aniden.
+
+#### Frontend
+
+- **Bandeja unificada.** No se hizo una ruta `/grupos` aparte: un grupo es un chat, y tenerlo en
+  otro lado obligaría a mirar en dos lugares para saber si te escribieron. El tipo de hilo se
+  distingue por el prefijo de la ruta —`/chat/<uuid>` es una conversación, `/chat/g/<uuid>` un
+  grupo—, que es un namespace barato y sin colisión posible con un id.
+- **`GroupThread` es hermano de `ChatThread`, no una generalización.** Se evaluó unificarlos con
+  un prop `kind`, y salía peor: la tabla es otra, el header es otro, los mensajes llevan autor y
+  el grupo tiene acciones que un 1:1 no tiene. Un `if` por cada diferencia adentro del mismo
+  archivo se lee peor que dos componentes hermanos que comparten `MessageBubble`.
+- **`MessageBubble` ahora acepta `author` y `showAuthor`**, ambos opcionales y con default
+  apagado. En un grupo siempre se muestran; en un 1:1 no se pasan y la burbuja queda idéntica a
+  antes (el nombre de la otra persona ya está en el header; repetirlo sería ruido).
+- **Se conserva la mecánica probada del 1:1**: sin inserción optimista (se inserta con
+  `.select()` y se agrega la fila devuelta), Realtime filtrado por `group_id` y deduplicado por
+  `id`. Así el mensaje aparece aunque Realtime falle y nunca se ve dos veces.
+- Se agregó un botón **"Crear grupo"** en el perfil público ajeno, que abre el mismo modal con
+  esa persona pre-cargada.
+
+#### Verificación
+
+**Base de datos.** Se corrió una prueba de 25 pasos dentro de una transacción, haciendo
+`set local request.jwt.claims` para cambiarme de usuario y `set local role authenticated` para
+que RLS aplicara de verdad. Pasaron las 25. Las que importan:
+
+| Prueba | Resultado |
+|---|---|
+| `create_group` con 2 invitados | 3 miembros: el creador `admin`, los otros `member` |
+| No-miembro leyendo grupos, miembros y mensajes | 0, 0, 0 |
+| Miembro leyendo el mensaje de otro | 1 |
+| **Suplantar `sender_id` en un INSERT** | bloqueado por RLS |
+| **Admin editando o borrando un mensaje** | 0 filas (el historial es de solo-apendizaje) |
+| **Alguien se va del grupo** | quedan 3 (con el bug: quedaban 0) |
+| No-admin expulsando por RPC | "Solo el administrador puede quitar miembros" |
+| Admin expulsando | quedan 2 |
+| Admin autoexpulsándose | "Para salir del grupo usá «Salir»…" |
+| INSERT directo en `groups` | bloqueado (no hay política) |
+| Nombre vacío | "El grupo necesita un nombre" |
+
+Los usuarios y grupos de prueba se borraron al terminar (`00000000-…` como id), y se confirmó
+que quedaran los datos reales: 2 perfiles, 1 conversación, 4 mazos.
+
+**Interfaz.** `npm run lint` limpio y `npm run build` en verde, y —como el lint y el build son
+análisis estático y no prueban que algo *se vea*— un banco temporal montando `GroupThread` y
+`NewGroupModal` con datos falsos. Medido en el navegador, no a ojo: 4 burbujas (1 propia a la
+derecha, 3 ajenas a la izquierda), los nombres de autor visibles en cada una, el salto de día
+("Ayer" / "Hoy"), la burbuja larga recortada a 590 px dentro de un contenedor de 786 (`max-w-[75%]`
+funcionando) y sin desborde horizontal, el panel de miembros con `Manchax · vos` sin botón Quitar
+y los otros dos con el suyo, y el modal con el campo de nombre enfocado, `maxLength=60` y el
+botón "Crear grupo" deshabilitado en vacío. Los archivos del banco se borraron.
+
+**Dos fallos propios del banco**, que valen como recordatorio:
+
+1. El import de `../src/index.css` fallaba porque la raíz de Vite estaba en la carpeta del banco y
+   los imports que salen de ella **no se sirven**: Vite responde con el `index.html` en vez del
+   módulo, el módulo entero muere y la página queda vacía **sin ningún error en consola**. Es la
+   tercera vez que este proyecto tropieza con "árbol de React vacío = excepción en el render".
+2. El alias del cliente de Supabase no matcheaba: un alias que apunta a la **ruta resuelta** del
+   archivo no aplica cuando el import que llega es **relativo**. Se resolvió con un matcher laxo
+   sobre el basename.
+
 
 

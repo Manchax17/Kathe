@@ -45,6 +45,11 @@ Inspirada en Anki, pero más visual y con un entorno cuidado.
 - **Explorar** personas por `@usuario` o nombre, con la cantidad de mazos públicos de cada una.
 - **Chat 1:1 en tiempo real** (Realtime de Supabase), con historial de solo-apendizaje: nadie
   puede editar ni borrar un mensaje ya enviado.
+- **Grupos de chat**, también en tiempo real y en la misma bandeja que los 1:1. Se crean desde
+  el botón "Nuevo grupo" del chat (nombre + personas, buscándolas por `@usuario`), son
+  **privados** —no aparecen en perfiles ni en Explorar, solo los ven sus miembros— y el creador
+  queda como administrador, que puede sumar gente y quitarla. Cualquiera puede salir por su
+  cuenta.
 
 ## Stack
 
@@ -85,6 +90,9 @@ En el SQL Editor del dashboard, corré estas migraciones en orden:
 9. `supabase/migrations/0008_ai_providers.sql` — tabla `user_ai_keys` (la API key de IA del
    usuario). **Sin política de SELECT a propósito**: el usuario puede escribir, reemplazar y
    borrar su key, pero no volver a leerla. Ver la sección de IA más abajo.
+10. `supabase/migrations/0009_groups.sql` — `groups`, `group_members` y `group_messages`: los
+   grupos de chat del RF4. Trae la función `is_group_member` y las RPC `create_group` y
+   `remove_group_member`, más la publicación de `group_messages` en Realtime.
 
 Son **idempotentes**: se pueden correr más de una vez sin romper nada.
 
@@ -223,11 +231,12 @@ src/
   components/    AppShell, Auth, DeckList, DeckCard, FlashCardView, StudyMode,
                  FileImporter, PdfImporter, CardsReviewModal, NewWordModal,
                  SettingsModal, ProfileEditor, AppearanceEditor, AvatarUploader,
-                 Avatar, ConversationList, ChatThread, MessageBubble, UserCard,
-                 Logo, ThemeToggle, Splash, AiSettings
+                 Avatar, ConversationList, ChatThread, GroupThread, MessageBubble,
+                 NewGroupModal, UserCard, Logo, ThemeToggle, Splash, AiSettings
   context/       ThemeProvider, AuthProvider, DecksProvider, AiProvider
                  (+ sus contextos)
-  hooks/         useTheme, useAuth, useDecks, useStats, useRouteDeck, useAi
+  hooks/         useTheme, useAuth, useDecks, useStats, useRouteDeck, useAi,
+                 useGroups, useGroupMembers
   utils/         studyQueue, deckIO, stats, pdfText, aiClient, aiProviders,
                  username, appearance, themePresets
   supabaseClient.js
@@ -238,7 +247,7 @@ public/
 supabase/
   migrations/    0001 decks · study_order · 0002 profiles · 0003 public_decks
                  0004 chat · 0005 avatars_storage · 0006 user_theme
-                 0007 deck_description · 0008 ai_providers
+                 0007 deck_description · 0008 ai_providers · 0009 groups
   functions/     extract-cards (Edge Function) + providers.ts (adaptadores)
 ```
 
@@ -252,7 +261,8 @@ supabase/
 | `/deck/:deckId/study` | Sesión de estudio |
 | `/explorar` | Buscar personas |
 | `/u/:username` | Perfil público |
-| `/chat` · `/chat/:conversationId` | Mensajes |
+| `/chat` · `/chat/:conversationId` | Mensajes 1:1 |
+| `/chat/g/:groupId` | Un grupo (el prefijo `g/` lo distingue de un id de conversación) |
 | `/ajustes` | Perfil, apariencia, tema, cuenta, estadísticas |
 
 Diseñado por **Manchax**.

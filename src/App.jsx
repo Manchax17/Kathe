@@ -37,6 +37,7 @@ export default function App() {
           <Route path="/explorar" element={<ExplorePage />} />
           <Route path="/u/:username" element={<ProfilePage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/chat/g/:groupId" element={<ChatPage />} />
           <Route path="/chat/:conversationId" element={<ChatPage />} />
           <Route path="/ajustes" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
