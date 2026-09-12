@@ -252,3 +252,28 @@ nunca existió**: se había leído mal una captura de pantalla. La consulta
 `group by username having count(*) > 1` devuelve `[]`, y las restricciones
 `profiles_username_key` (UNIQUE) y `profiles_username_format` (CHECK `^[a-z0-9_]{3,24}$`)
 estuvieron siempre presentes. Los tres scripts se eliminaron; nunca se commitearon.
+
+### Deploy automático y bug de "me saca al registro"
+
+**Cloudflare Pages conectado a GitHub.** El proyecto estaba creado por *Direct Upload* y
+seguía una rama `main` que ya no existe en el remoto (el repo quedó solo con `master`), así
+que el último deploy válido era de hacía 12 días. Se reconectó apuntando a `master`, con
+framework *React (Vite)*, build `npm run build`, salida `dist`, y las variables
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` y `NODE_VERSION=22`.
+
+> **Cuidado**: en Cloudflare Pages las variables de entorno **no** se aplican a un deploy ya
+> construido. Después de cargarlas hay que rebuildear (Retry deployment) o el bundle sale
+> sin credenciales y la app queda en pantalla negra.
+
+**Corrección: sesión perdida al entrar.** Ya desplegado, la app dejaba entrar y a los
+segundos devolvía al login. La única vía de expulsión es `RequireAuth` viendo `user === null`,
+así que la causa estaba en `AuthProvider`:
+
+- `loading` se apagaba cuando resolvía `getSession()`, que va **antes** de que Supabase
+  termine de leer el storage. Quedaba una ventana con `loading=false` y `user=null`, y
+  `RequireAuth` mandaba a `/login`.
+- Ahora `loading` se apaga recién con el **primer evento** de `onAuthStateChange`, que es
+  cuando la sesión está realmente resuelta. `getSession()` queda como red de seguridad.
+- Además, un `INITIAL_SESSION` sin sesión ya no desloguea a quien estaba adentro: la única
+  forma legítima de perder la sesión es un `SIGNED_OUT` explícito (incluido el que emite
+  Supabase si falla el refresh del token).

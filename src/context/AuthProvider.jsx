@@ -27,18 +27,38 @@ export function AuthProvider({ children }) {
   // Sesión: lectura inicial + suscripción a cambios (login, logout, refresh).
   useEffect(() => {
     let active = true;
+    let settled = false;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
+    const settle = () => {
+      if (!settled) {
+        settled = true;
+        setLoading(false);
+      }
+    };
 
+    // El listener es la fuente de verdad. Antes `loading` lo apagaba getSession(),
+    // que resuelve ANTES de que Supabase termine de leer el storage: quedaba una
+    // ventana con loading=false y user=null, y RequireAuth mandaba a /login.
+    // Ahora esperamos al primer evento real del listener.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      const next = session?.user ?? null;
+
+      // Un INITIAL_SESSION sin sesión no tiene que desloguear a quien ya estaba
+      // adentro. La única forma legítima de perder la sesión en runtime es un
+      // SIGNED_OUT explícito (incluye el que emite Supabase si falla el refresh).
+      setUser((prev) => (next === null && prev && event !== 'SIGNED_OUT' ? prev : next));
+      settle();
+    });
+
+    // Red de seguridad: si el listener no llegara a disparar nunca, getSession
+    // resuelve igual y la app no se queda colgada en el Splash.
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active || settled) return;
+      setUser(data.session?.user ?? null);
+      settle();
     });
 
     return () => {
